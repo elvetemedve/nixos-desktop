@@ -77,8 +77,6 @@
     isNormalUser = true;
     description = "Géza Búza";
     extraGroups = [ "networkmanager" "wheel" ];
-    shell = pkgs.fish;
-    ignoreShellProgramCheck = true;
   };
 
   # Install firefox.
