@@ -84,6 +84,12 @@
   # Install firefox.
   programs.firefox.enable = true;
 
+  # Setup Gnupg for SSH authentication
+  programs.gnupg.agent = {
+    enable = true;
+    enableSSHSupport = true;
+  };
+
   # Enable the Flakes feature and the accompanying new nix command-line tool
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 

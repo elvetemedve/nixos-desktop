@@ -14,6 +14,8 @@
     enable = true;
     interactiveShellInit = ''
       set fish_greeting # Disable greeting
+      gpg-connect-agent /bye
+      export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
     '';
     plugins = [
       {
