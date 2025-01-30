@@ -7,6 +7,7 @@
     ../../home/editor.nix
     ../../home/secret.nix
     ../../home/shell.nix
+    ../../home/storage.nix
     ../../home/terminal.nix
   ];
 
