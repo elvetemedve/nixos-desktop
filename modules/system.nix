@@ -6,8 +6,14 @@
 
 {
   # Bootloader.
-  boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
+
+  boot.loader.systemd-boot = {
+    enable = true;
+    configurationLimit = 15; # Limit the number of boot entries
+    consoleMode = "max"; # Adjust boot screen resolution for HiDPI monitor
+    editor = false; # Disable editing the boot entries for security protection
+  };
 
   networking.hostName = "ThinkPadP16s-NixOS"; # Define your hostname.
   # networking.wireless.enable = true;  # Enables wireless support via wpa_supplicant.
@@ -79,6 +85,9 @@
     extraGroups = [ "networkmanager" "wheel" ];
   };
 
+  # Install Git version manager
+  programs.git.enable = true;
+
   # Install firefox.
   programs.firefox.enable = true;
 
@@ -98,7 +107,7 @@
   # $ nix search wget
   environment.systemPackages = with pkgs; [
     vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
-  #  wget
+    pwvucontrol # Pipewire Volume Control tool.
   ];
 
   # Set the default editor to vim

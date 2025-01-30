@@ -8,6 +8,9 @@
       "hu"
     ];
     settings = {
+      "privacy.clearOnShutdown.cookies" = false;
+      "privacy.clearOnShutdown.history" = false;
+      "privacy.clearOnShutdown.downloads" = false;
       "webgl.disabled" = false;
     };
   };
