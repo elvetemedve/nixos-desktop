@@ -91,6 +91,14 @@
   # Install firefox.
   programs.firefox.enable = true;
 
+  # Install NeoVIM editor and set it default.
+  programs.neovim = {
+    enable = true;
+    defaultEditor = true;
+    viAlias = true;
+    vimAlias = true;
+  };
+
   # Setup Gnupg for SSH authentication
   programs.gnupg.agent = {
     enable = true;
@@ -106,12 +114,8 @@
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
-    vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
     pwvucontrol # Pipewire Volume Control tool.
   ];
-
-  # Set the default editor to vim
-  environment.variables.EDITOR = "vim";
 
   # Some programs need SUID wrappers, can be configured further or are
   # started in user sessions.
