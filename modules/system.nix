@@ -94,7 +94,6 @@
   # Install NeoVIM editor and set it default.
   programs.neovim = {
     enable = true;
-    defaultEditor = true;
     viAlias = true;
     vimAlias = true;
   };
@@ -114,8 +113,12 @@
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
+    helix # Post-modern modal text editor.
     pwvucontrol # Pipewire Volume Control tool.
   ];
+
+  # Set Helix as default text editor
+  environment.variables."EDITOR" = "hx";
 
   # Some programs need SUID wrappers, can be configured further or are
   # started in user sessions.
