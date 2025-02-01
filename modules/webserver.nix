@@ -6,11 +6,10 @@
   services.caddy = {
     enable = true;
     virtualHosts = {
-      "syncthing.localhost" = {
+      "http://syncthing.localhost" = {
         extraConfig = ''
           reverse_proxy http://localhost:8384
         '';
-        serverAliases = [ "syncthing" ];
       };
     };
   };
