@@ -5,30 +5,18 @@
     extraPackages = [ pkgs.wl-clipboard ];
     defaultEditor = true;
     settings = {
+      theme = "custom-default";
       keys.insert = {
         S-tab = "unindent";
       };
     };
-  };
+    themes = {
+      custom-theme = {
+        inherits = "default";
 
-  programs.neovim = {
-    enable = true;
-    extraConfig = ''
-      set expandtab
-      set number
-      set shiftwidth=4
-      set softtabstop=2
-    '';
-    viAlias = true;
-    vimAlias = true;
-    vimdiffAlias = true;
-    plugins = with pkgs.vimPlugins; [
-      nvim-lspconfig
-      nvim-treesitter.withAllGrammars
-      plenary-nvim
-      gruvbox-material
-      mini-nvim
-    ];
+        "ui.cursor.primary" = { fg = "#666666"; bg = "#ffffff"; };
+      };
+    };
   };
 }
 
