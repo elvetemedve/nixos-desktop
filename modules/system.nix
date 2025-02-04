@@ -91,13 +91,6 @@
   # Install firefox.
   programs.firefox.enable = true;
 
-  # Install NeoVIM editor and set it default.
-  programs.neovim = {
-    enable = true;
-    viAlias = true;
-    vimAlias = true;
-  };
-
   # Setup Gnupg for SSH authentication
   programs.gnupg.agent = {
     enable = true;
