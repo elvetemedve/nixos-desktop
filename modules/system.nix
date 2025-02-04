@@ -88,9 +88,6 @@
   # Install Git version manager
   programs.git.enable = true;
 
-  # Install firefox.
-  programs.firefox.enable = true;
-
   # Setup Gnupg for SSH authentication
   programs.gnupg.agent = {
     enable = true;
