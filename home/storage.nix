@@ -23,6 +23,15 @@
             params.keep = "5";
           };
         };
+
+        "/mnt/music/albums" = {
+          id = "music-albums-for-djing";
+          ignorePerms = true; # Do not sync file permissions as FAT does not support it
+          devices = [ "home-server" ];
+          label = "Music albums for DJing";
+          rescanIntervalS = 86400; # The rescan interval, in seconds
+          type = "receiveonly"; # Local file change is not synced
+        };
       };
     };
   };

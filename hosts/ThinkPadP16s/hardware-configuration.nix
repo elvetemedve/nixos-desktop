@@ -24,6 +24,12 @@
       options = [ "fmask=0077" "dmask=0077" ];
     };
 
+  fileSystems."/mnt/music" = {
+    device = "/dev/disk/by-uuid/FA4E-8A83";
+    fsType = "vfat";
+    options = [ "users" "nofail" "utf8" ];
+  };
+
   swapDevices = [ ];
 
   # Enables DHCP on each ethernet and wireless interface. In case of scripted networking
