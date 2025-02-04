@@ -6,6 +6,7 @@
     ../../home/browser.nix
     ../../home/editor.nix
     ../../home/gnome.nix
+    ../../home/messaging.nix
     ../../home/secret.nix
     ../../home/shell.nix
     ../../home/storage.nix
