@@ -18,13 +18,9 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nur = {
-      url = "github:nix-community/NUR";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
-  outputs = inputs@{ nixpkgs, home-manager, nur, ... }: {
+  outputs = inputs@{ nixpkgs, home-manager, ... }: {
     nixosConfigurations = {
       "ThinkPadP16s-NixOS" = let
         username = "geza";
@@ -44,9 +40,6 @@
             # Optionally, use home-manager.extraSpecialArgs to pass arguments to home.nix
             home-manager.extraSpecialArgs = inputs // specialArgs;
           }
-
-          # Adds the NUR overlay
-          nur.modules.nixos.default
         ];
       };
     };
