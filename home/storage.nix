@@ -1,4 +1,4 @@
-{ ... }:
+{ username, lib, osConfig, ... }:
 {
   services.syncthing = {
     enable = true;
@@ -14,7 +14,7 @@
         };
       };
       folders = {
-        "/home/geza/KeePassXC" = {
+        "/home/${username}/KeePassXC" = {
           id = "keepass";
           devices = [ "smartphone" "home-server" ];
           label = "KeePassXC";
@@ -23,7 +23,7 @@
             params.keep = "5";
           };
         };
-
+      } // lib.attrsets.optionalAttrs (builtins.hasAttr "/mnt/music" osConfig.fileSystems) { # Apply the following settings where /mnt/music is a mount point
         "/mnt/music/albums" = {
           id = "music-albums-for-djing";
           ignorePerms = true; # Do not sync file permissions as FAT does not support it
@@ -32,7 +32,16 @@
           rescanIntervalS = 86400; # The rescan interval, in seconds
           type = "receiveonly"; # Local file change is not synced
         };
+        "/mnt/music/singles" = {
+          id = "music-singles-for-djing";
+          ignorePerms = true; # Do not sync file permissions as FAT does not support it
+          devices = [ "home-server" ];
+          label = "Music singles for DJing";
+          rescanIntervalS = 86400; # The rescan interval, in seconds
+          type = "receiveonly"; # Local file change is not synced
+        };
       };
+
     };
   };
 }
