@@ -94,6 +94,13 @@
     enableSSHSupport = true;
   };
 
+  # Garbage collect unused/old profiles and packages
+  nix.gc = {
+    automatic = true;
+    dates = "weekly";
+    options = "--delete-older-than 30d";
+  };
+
   # Enable the Flakes feature and the accompanying new nix command-line tool
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
