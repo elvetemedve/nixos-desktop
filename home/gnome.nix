@@ -1,4 +1,4 @@
-{ ... }:
+{ username, pkgs, ... }:
 {
   dconf.settings = {
     "org/gnome/desktop/interface" = {
@@ -25,7 +25,11 @@
         "places-menu@gnome-shell-extensions.gcampax.github.com" # Shop "Places" menu in top bar
         "windowsNavigator@gnome-shell-extensions.gcampax.github.com" # Select windows in overview mode by Alt+number
         "GPaste@gnome-shell-extensions.gnome.org" # Clipboard integration
+        "System_Monitor@bghome.gmail.com" # System monitor integrated into the top bar
       ];
     };
   };
+
+  home.packages = [ pkgs.libgtop ]; # Library to read running processed. Used by System Monitor extension.
+  home.sessionVariables."GI_TYPELIB_PATH" = "/etc/profiles/per-user/${username}/lib/girepository-1.0"; # Make Gnome libraries discoverable
 }
