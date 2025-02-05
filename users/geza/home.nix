@@ -2,6 +2,7 @@
 
 {
   imports = [
+    ../../home/audio.nix
     ../../home/base.nix
     ../../home/browser.nix
     ../../home/editor.nix
