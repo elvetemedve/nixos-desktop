@@ -27,7 +27,6 @@
         specialArgs = { inherit username; };
       in 
         nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
         modules = [
           ./hosts/ThinkPadP16s
 
