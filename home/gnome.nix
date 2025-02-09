@@ -1,8 +1,16 @@
-{ username, pkgs, ... }:
+{ username, pkgs, lib, ... }:
 {
   dconf.settings = {
     "org/gnome/desktop/interface" = {
       color-scheme = "prefer-dark"; # Change Gnome Shell theme to dark
+    };
+
+    # Customize global hotkeys
+    "org/gnome/desktop/wm/keybindings" = {
+      "cycle-group" = [ "<Super>Tab" ];
+      "switch-applications" = [ "<Alt>Tab" ];
+      "switch-group" = [ "<Super>Above_Tab" ]; # Windows+`
+      "switch-group-backward" = [ "<Shift><Super>Above_Tab" ]; # Shift+Windows+`
     };
 
     # Clipboard manager
@@ -30,6 +38,9 @@
     };
   };
 
-  home.packages = [ pkgs.libgtop ]; # Library to read running processed. Used by System Monitor extension.
+  home.packages = with pkgs; [
+    gpaste # Clipboard management system with GNOME integration
+    libgtop # Library to read running processed. Used by System Monitor extension.
+  ];
   home.sessionVariables."GI_TYPELIB_PATH" = "/etc/profiles/per-user/${username}/lib/girepository-1.0"; # Make Gnome libraries discoverable
 }
