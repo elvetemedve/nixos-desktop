@@ -43,4 +43,25 @@
     libgtop # Library to read running processed. Used by System Monitor extension.
   ];
   home.sessionVariables."GI_TYPELIB_PATH" = "/etc/profiles/per-user/${username}/lib/girepository-1.0"; # Make Gnome libraries discoverable
+
+  # Run GPaste-Daemon as user service
+  systemd.user.services = {
+    "org.gnome.GPaste" = {
+      Unit = {
+        Description = "GPaste daemon";
+        PartOf = "graphical-session.target";
+        After = "graphical-session.target";
+      };
+
+      Service = {
+        Type = "dbus";
+        BusName = "org.gnome.GPaste";
+        ExecStart = "${pkgs.gpaste}/libexec/gpaste/gpaste-daemon";
+      };
+
+      Install = {
+        WantedBy = [ "graphical-session.target" ];
+      };
+    };
+  };
 }
