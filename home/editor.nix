@@ -5,6 +5,9 @@
     extraPackages = [ pkgs.wl-clipboard ];
     defaultEditor = true;
     settings = {
+      editor = {
+        line-number = "relative";
+      };
       theme = "custom-default";
       keys.insert = {
         S-tab = "unindent";
