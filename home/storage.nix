@@ -1,5 +1,9 @@
-{ username, lib, osConfig, ... }:
+{ username, lib, osConfig, pkgs, ... }:
 {
+  home.packages = with pkgs; [
+    sshfs # Utility to mount SSH connection as filesystem
+  ];
+
   services.syncthing = {
     enable = true;
     settings = {
