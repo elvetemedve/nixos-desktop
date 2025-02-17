@@ -27,7 +27,14 @@
   fileSystems."/mnt/music" = {
     device = "/dev/disk/by-uuid/FA4E-8A83";
     fsType = "vfat";
-    options = [ "users" "nofail" "utf8" ];
+    options = [
+      "users"
+      "nofail"
+      "utf8"
+      "x-systemd.automount"
+      ''uid=${builtins.toString config.users.users."geza".uid}''
+      ''gid=${builtins.toString config.users.groups."users".gid}''
+    ];
   };
 
   swapDevices = [ ];

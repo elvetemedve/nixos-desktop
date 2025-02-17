@@ -83,6 +83,7 @@
     isNormalUser = true;
     description = "Géza Búza";
     extraGroups = [ "networkmanager" "wheel" ];
+    uid = 1000;
   };
 
   # Install Git version manager
