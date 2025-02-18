@@ -1,0 +1,4 @@
+Host nixos.lan
+	IdentityFile ~/.ssh/home-server_ed25519
+	IdentitiesOnly yes
+
