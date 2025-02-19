@@ -2,7 +2,13 @@
 {
   dconf.settings = {
     "org/gnome/desktop/interface" = {
-      color-scheme = "prefer-dark"; # Change Gnome Shell theme to dark
+      "clock-show-weekday" = true; # Display current day of the week on the top bar
+      "color-scheme" = "prefer-dark"; # Change Gnome Shell theme to dark
+    };
+
+    # Calendar settings
+    "org/gnome/desktop/calendar" = {
+      "show-weekdate" = true; # Display week of year in the calendar widget
     };
 
     # Customize global hotkeys
