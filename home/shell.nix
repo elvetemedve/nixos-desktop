@@ -23,6 +23,12 @@
     enable = true;
     interactiveShellInit = ''
       set fish_greeting # Disable greeting
+
+      # Configure the Tide plugin
+      set --universal tide_left_prompt_items context os pwd git newline character
+      set --universal tide_right_prompt_items status cmd_duration jobs direnv node python rustc java php pulumi ruby go gcloud kubectl distrobox toolbox terraform aws nix_shell crystal elixir zig time
+      set --universal tide_context_always_display true # Display user@hostname in the prompt always
+
       gpg-connect-agent /bye
       export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
     '';
