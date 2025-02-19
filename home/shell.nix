@@ -46,6 +46,9 @@
         src = pkgs.fishPlugins.done.src;
       }
     ];
+    shellAliases = {
+      cat = "bat";
+    };
   };
 
   # User-friendly alternative to "find" command
