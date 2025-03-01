@@ -5,6 +5,7 @@
     ../../home/audio.nix
     ../../home/base.nix
     ../../home/browser.nix
+    ../../home/document.nix
     ../../home/editor.nix
     ../../home/gnome.nix
     ../../home/messaging.nix
