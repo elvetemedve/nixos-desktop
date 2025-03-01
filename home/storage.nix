@@ -19,6 +19,16 @@
         };
       };
       folders = {
+        "/home/${username}/Documents" = {
+          id = "home-documents";
+          devices = [ "home-server" ];
+          label = "Documents";
+          rescanIntervalS = 86400; # The rescan interval, in seconds
+          versioning = {
+            type = "simple";
+            params.keep = "2";
+          };
+        };
         "/home/${username}/KeePassXC" = {
           id = "keepass";
           devices = [ "smartphone" "home-server" ];
@@ -26,6 +36,16 @@
           versioning = {
             type = "simple";
             params.keep = "5";
+          };
+        };
+        "/home/${username}/Pictures" = {
+          id = "home-pictures";
+          devices = [ "home-server" ];
+          label = "Pictures";
+          rescanIntervalS = 86400; # The rescan interval, in seconds
+          versioning = {
+            type = "simple";
+            params.keep = "2";
           };
         };
       } // lib.attrsets.optionalAttrs (builtins.hasAttr "/mnt/music" osConfig.fileSystems) { # Apply the following settings where /mnt/music is a mount point
