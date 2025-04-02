@@ -1,5 +1,9 @@
 { pkgs, ... }:
 {
+  home.packages = with pkgs; [
+    gimp # Graphics editor
+  ];
+
   programs.helix = {
     enable = true;
     extraPackages = [ pkgs.wl-clipboard ];
