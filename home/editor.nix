@@ -1,7 +1,9 @@
 { pkgs, ... }:
 {
   home.packages = with pkgs; [
+    inkscape # Vector graphics editor
     gimp # Graphics editor
+    pinta # Simple raster graphics editor
   ];
 
   programs.helix = {
