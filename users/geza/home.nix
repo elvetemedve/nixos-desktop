@@ -13,6 +13,8 @@
     ../../home/shell.nix
     ../../home/storage.nix
     ../../home/terminal.nix
+    ../../home/utility.nix
+    ../../home/video.nix
   ];
 
   programs.git = {
