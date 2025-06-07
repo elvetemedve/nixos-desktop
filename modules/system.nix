@@ -113,6 +113,7 @@
   environment.systemPackages = with pkgs; [
     helix # Post-modern modal text editor.
     pwvucontrol # Pipewire Volume Control tool.
+    gnome-network-displays # Miracast implementation for GNOME Desktop
   ];
 
   # Set Helix as default text editor
