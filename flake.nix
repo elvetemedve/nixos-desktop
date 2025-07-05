@@ -22,13 +22,35 @@
 
   outputs = inputs@{ nixpkgs, home-manager, ... }: {
     nixosConfigurations = {
-      "ThinkPadP16s-NixOS" = let
+
+      "ThinkPadP16s" = let
         username = "geza";
         specialArgs = { inherit username; };
       in 
         nixpkgs.lib.nixosSystem {
         modules = [
           ./hosts/ThinkPadP16s
+
+          home-manager.nixosModules.home-manager
+          {
+            home-manager.useGlobalPkgs = true;
+            home-manager.useUserPackages = true;
+            home-manager.users.${username} = import ./users/${username}/home.nix;
+
+            # Optionally, use home-manager.extraSpecialArgs to pass arguments to home.nix
+            home-manager.extraSpecialArgs = inputs // specialArgs;
+          }
+        ];
+      };
+
+
+      "ThinkPadT580" = let
+        username = "geza";
+        specialArgs = { inherit username; };
+      in
+        nixpkgs.lib.nixosSystem {
+        modules = [
+          ./hosts/ThinkPadT580
 
           home-manager.nixosModules.home-manager
           {

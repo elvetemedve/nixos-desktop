@@ -9,6 +9,6 @@
     ./hardware-configuration.nix
   ];
 
-  networking.hostName = "ThinkPadP16s"; # Define your hostname.
+  networking.hostName = "ThinkPadT580"; # Define your hostname.
 }
 
