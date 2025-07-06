@@ -22,15 +22,20 @@
   programs.fish = {
     enable = true;
     interactiveShellInit = ''
+      gpg-connect-agent /bye
+      export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
+
       set fish_greeting # Disable greeting
 
       # Configure the Tide plugin
       set --universal tide_left_prompt_items context os pwd git newline character
-      set --universal tide_right_prompt_items status cmd_duration jobs direnv node python rustc java php pulumi ruby go gcloud kubectl distrobox toolbox terraform aws nix_shell crystal elixir zig time
+      set --universal tide_right_prompt_items status cmd_duration jobs direnv node python rustc java php pulumi ruby go gcloud distrobox toolbox terraform aws nix_shell crystal elixir zig time
       set --universal tide_context_always_display true # Display user@hostname in the prompt always
-
-      gpg-connect-agent /bye
-      export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
+      set --universal _tide_left_items $tide_left_prompt_items
+      set --universal _tide_right_items $tide_right_prompt_items
+    '';
+    loginShellInit = ''
+      tide configure --auto --style=Rainbow --prompt_colors='True color' --show_time='24-hour format' --rainbow_prompt_separators=Angled --powerline_prompt_heads=Sharp --powerline_prompt_tails=Flat --powerline_prompt_style='Two lines, character' --prompt_connection=Solid --powerline_right_prompt_frame=No --prompt_connection_andor_frame_color=Lightest --prompt_spacing=Compact --icons='Many icons' --transient=Yes
     '';
     plugins = [
       {
