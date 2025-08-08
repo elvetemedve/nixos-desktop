@@ -18,6 +18,99 @@
     fi
   '';
 
+  # Highly configurable system information fetching CLI tool
+  programs.fastfetch = {
+    enable = true;
+    settings = {
+      "$schema" = "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json";
+      logo = {
+        type = "builtin";
+        source = "nixos";
+        padding = {
+          right = 2;
+        };
+        color = {
+          "1" = "blue";
+        };
+      };
+      display = {
+        separator = "  ";
+        color = {
+          keys = "blue";
+        };
+      };
+      modules = [
+        "title"
+        "separator"
+        {
+          type = "os";
+          key = "OS";
+        }
+        {
+          type = "kernel";
+          key = "Kernel";
+        }
+        {
+          type = "uptime";
+          key = "Uptime";
+        }
+        {
+          type = "bios";
+          key = "BIOS";
+        }
+        {
+          type = "de";
+          key = "DE";
+        }
+        {
+          type = "shell";
+          key = "Shell";
+        }
+        {
+          type = "terminal";
+          key = "Terminal";
+        }
+        {
+          type = "packages";
+          key = "Packages";
+        }
+        {
+          type = "cpu";
+          key = "CPU";
+        }
+        {
+          type = "gpu";
+          key = "GPU";
+        }
+        {
+          type = "memory";
+          key = "Memory";
+        }
+        "break"
+        {
+          type = "disk";
+          key = "Disk";
+          format = "{name} - {size-used} / {size-total} [{size-percentage}]";
+          folders = [
+            "/"
+          ];
+        }
+        {
+          type = "wifi";
+          key = "WiFi";
+        }
+        {
+          type = "player";
+          key = "Media Player";
+        }
+        {
+          type = "media";
+          key = "Currently Playing";
+        }
+      ];
+    };
+  };
+
   # Enable and confgure Fish shell
   programs.fish = {
     enable = true;
@@ -33,9 +126,12 @@
       set --universal tide_context_always_display true # Display user@hostname in the prompt always
       set --universal _tide_left_items $tide_left_prompt_items
       set --universal _tide_right_items $tide_right_prompt_items
+
+      # Display system info
+      ${pkgs.fastfetch}/bin/fastfetch
     '';
     loginShellInit = ''
-      tide configure --auto --style=Rainbow --prompt_colors='True color' --show_time='24-hour format' --rainbow_prompt_separators=Angled --powerline_prompt_heads=Sharp --powerline_prompt_tails=Flat --powerline_prompt_style='Two lines, character' --prompt_connection=Solid --powerline_right_prompt_frame=No --prompt_connection_andor_frame_color=Lightest --prompt_spacing=Compact --icons='Many icons' --transient=Yes
+      tide configure --auto --style=Rainbow --prompt_colors='True color' --show_time='24-hour format' --rainbow_prompt_separators=Angled --powerline_prompt_heads=Sharp --powerline_prompt_tails=Flat --powerline_prompt_style='Two lines; character' --prompt_connection=Solid --powerline_right_prompt_frame=No --prompt_connection_andor_frame_color=Lightest --prompt_spacing=Compact --icons='Many icons' --transient=Yes
     '';
     plugins = [
       {
