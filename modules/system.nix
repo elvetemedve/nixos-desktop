@@ -109,6 +109,9 @@
   # Set Helix as default text editor
   environment.variables."EDITOR" = "hx";
 
+  # Enable Wayland mode for QT framework based applications to display UI correctly.
+  environment.variables."QT_QPA_PLATFORM" = "wayland";
+
   # Some programs need SUID wrappers, can be configured further or are
   # started in user sessions.
   # programs.mtr.enable = true;
