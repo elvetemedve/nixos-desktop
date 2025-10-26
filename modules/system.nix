@@ -46,6 +46,9 @@
   services.displayManager.gdm.enable = true;
   services.desktopManager.gnome.enable = true;
 
+  # Install fwup daemon and user space client, for managing device firmware updates.
+  services.fwupd.enable = true;
+  
   # Enable CUPS to print documents.
   services.printing.enable = true;
 
