@@ -45,6 +45,7 @@
             home-manager.extraSpecialArgs = inputs // specialArgs;
           }
         ];
+        inherit specialArgs;
       };
 
 
@@ -67,6 +68,7 @@
             home-manager.extraSpecialArgs = inputs // specialArgs;
           }
         ];
+        inherit specialArgs;
       };
     };
   };
