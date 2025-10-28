@@ -105,8 +105,11 @@
   # $ nix search wget
   environment.systemPackages = with pkgs; [
     helix # Post-modern modal text editor.
+    pciutils # Install CLI commands like lspci
     pwvucontrol # Pipewire Volume Control tool.
     gnome-network-displays # Miracast implementation for GNOME Desktop
+    usbutils # Install CLI commands like lsusb
+    lshw # Display hardware information report
   ];
 
   # Set Helix as default text editor

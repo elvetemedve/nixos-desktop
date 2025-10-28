@@ -3,6 +3,11 @@
 { config, pkgs, username, ... }:
 
 {
+  boot.kernelParams = [ 
+    "intel_iommu=on" 
+    "iommu=pt"
+  ];
+  
   # Enable libvirt and KVM virtualization
   virtualisation.libvirtd = {
     enable = true;
