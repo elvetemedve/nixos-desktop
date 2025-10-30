@@ -19,10 +19,10 @@
 
   programs.git = {
     enable = true;
-    extraConfig = {
+    settings.user = {
+      name = "Géza Búza";
+      email = "bghome@gmail.com";
       safe.directory = "/etc/nixos";
     };
-    userName = "Géza Búza";
-    userEmail = "bghome@gmail.com";
   };
 }
