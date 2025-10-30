@@ -5,6 +5,10 @@
 { config, pkgs, ... }:
 
 {
+  boot.kernel.sysctl = {
+    "net.ipv4.icmp_echo_ignore_broadcasts" = 0; # Enable receiving broadcast messages on IPv4
+  };
+
   # Bootloader.
   boot.loader.efi.canTouchEfiVariables = true;
 
