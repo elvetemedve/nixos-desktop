@@ -92,6 +92,9 @@
     enableSSHSupport = true;
   };
 
+  # Install LocalSend, sharing files to nearby devices.
+  programs.localsend.enable = true;
+
   # Garbage collect unused/old profiles and packages
   nix.gc = {
     automatic = true;
@@ -114,6 +117,7 @@
     gnome-network-displays # Miracast implementation for GNOME Desktop
     usbutils # Install CLI commands like lsusb
     lshw # Display hardware information report
+    net-tools # Install netstat
   ];
 
   # Set Helix as default text editor
