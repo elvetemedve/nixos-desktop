@@ -11,6 +11,10 @@
       "show-weekdate" = true; # Display week of year in the calendar widget
     };
 
+    "org/gnome/desktop/session" = {
+      "idle-delay" = lib.hm.gvariant.mkUint32 900; # 15 minutes inactivity until screen blanks
+    };
+
     # Customize global hotkeys
     "org/gnome/desktop/wm/keybindings" = {
       "cycle-group" = [ "<Super>Tab" ];
@@ -29,6 +33,10 @@
     "org/gnome/mutter" = {
       "edge-tiling" = true;
       "workspaces-only-on-primary" = true; # Switching workspace on primary monitor does not switch windows on secondary monitor
+    };
+
+    "org/gnome/settings-daemon/plugins/power" = {
+      "sleep-inactive-ac-timeout" = 7200; # 2 hours inactivity until suspend/hibernate when connected to AC power
     };
 
     # Gnome Shell
