@@ -5,12 +5,15 @@
   ];
 
   # KeePassXC offline password manager
+  # For available settings, see https://github.com/keepassxreboot/keepassxc/blob/develop/src/core/Config.cpp
   programs.keepassxc = {
     autostart = true;
     enable = true;
     settings = {
       Browser.Enabled = true;
       Browser.UpdateBinaryPath = false;
+
+      FdoSecrets.Enabled = true;
 
       GUI = {
         AdvancedSettings = true;

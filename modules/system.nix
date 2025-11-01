@@ -2,7 +2,7 @@
 # your system.  Help is available in the configuration.nix(5) man page
 # and in the NixOS manual (accessible by running ‘nixos-help’).
 
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 {
   boot.kernel.sysctl = {
@@ -49,6 +49,7 @@
   # Enable the GNOME Desktop Environment.
   services.displayManager.gdm.enable = true;
   services.desktopManager.gnome.enable = true;
+  services.gnome.gnome-keyring.enable = lib.mkForce false; # Disable Gnome Keyring Daemon, because other app is uses as Secret Service
 
   # Install fwup daemon and user space client, for managing device firmware updates.
   services.fwupd.enable = true;
