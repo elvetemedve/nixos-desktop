@@ -73,6 +73,8 @@
     #media-session.enable = true;
   };
 
+  security.sudo-rs.enable = true; # A memory safe implementation of sudo and su.
+
   # Enable touchpad support (enabled default in most desktopManager).
   # services.xserver.libinput.enable = true;
 
