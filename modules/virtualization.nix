@@ -25,7 +25,7 @@
   environment.systemPackages = with pkgs; [
     virt-manager
     virt-viewer
-    win-virtio  # VirtIO drivers
+    virtio-win  # VirtIO drivers
     spice
     spice-gtk
     spice-protocol
