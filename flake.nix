@@ -56,7 +56,7 @@
         nixpkgs.lib.nixosSystem {
         modules = [
           ./hosts/ThinkPadT580
-          #nixos-06cb-009a-fingerprint-sensor.nixosModules."06cb-009a-fingerprint-sensor"
+          nixos-06cb-009a-fingerprint-sensor.nixosModules."06cb-009a-fingerprint-sensor"
 
           home-manager.nixosModules.home-manager
           {
