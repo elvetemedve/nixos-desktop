@@ -3,11 +3,29 @@
 { config, pkgs, username, ... }:
 
 {
+  boot.kernelPackages = pkgs.linuxPackages_latest; # Use the latest stable kernel version
+
   boot.kernelParams = [ 
     "intel_iommu=on" 
     "iommu=pt"
+    "amdgpu.runpm=0" # Workaround for a power management bug with GMKtec AD-GP1 AMD Radeon 7600M XT
+    "vfio-pci.ids=1002:7480,1002:ab30"
   ];
-  
+
+  boot.initrd.kernelModules = [
+    "vfio_pci"
+    "vfio"
+    "vfio_iommu_type1"
+
+    "i915"
+  ];
+
+  # Workaround for power management issues when vfio-pci driver is used
+  # Optional: ATTR{power/control}="on"
+  services.udev.extraRules = ''
+    ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x1002", ATTR{device}=="0x7480", ATTR{d3cold_allowed}="0"
+  '';
+
   # Enable libvirt and KVM virtualization
   virtualisation.libvirtd = {
     enable = true;
