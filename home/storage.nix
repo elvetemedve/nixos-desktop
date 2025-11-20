@@ -14,8 +14,8 @@
           name = "Home Server";
         };
         "smartphone" = {
-          id = "JXHPBOZ-OKJMZOI-WQAZJT6-2UEAFBM-TCU2KD4-PRUKORF-M5SJ4ZI-27FMIQU";
-          name = "Geza's Samsung Galaxy S24 Ultra";
+          id = "H4CYTW5-I7BCI6P-TEF56UK-QY3X3TD-HWU4S6Q-DMXBHR7-6BDFVF5-O735FQO";
+          name = "Geza's Galaxy S24 Ultra";
         };
       };
       folders = {
