@@ -50,6 +50,17 @@
   services.displayManager.gdm.enable = true;
   services.desktopManager.gnome.enable = true;
   services.gnome.gnome-keyring.enable = lib.mkForce false; # Disable Gnome Keyring Daemon, because other app is uses as Secret Service
+  services.gnome.gnome-software.enable = true; # Install the GNOME Software app.
+
+  # Enable installing application packaged by Flatpak.
+  services.flatpak.enable = true;
+  systemd.services.flatpak-repo = {
+    wantedBy = [ "multi-user.target" ];
+    path = [ pkgs.flatpak ];
+    script = ''
+      flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+    '';
+  };
 
   # Install fwup daemon and user space client, for managing device firmware updates.
   services.fwupd.enable = true;
