@@ -3,7 +3,6 @@
   imports = [
     ../../modules/browser.nix
     ../../modules/gaming.nix
-    ../../modules/virtualization.nix
     ../../modules/webserver.nix
     ../../modules/system.nix
 
