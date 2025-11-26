@@ -23,12 +23,6 @@
       "switch-group-backward" = [ "<Shift><Super>Above_Tab" ]; # Shift+Windows+`
     };
 
-    # Clipboard manager
-    "org/gnome/GPaste" = {
-      "images-support" = true; # Clipboard can accept images
-      "track-extension-state" = true; # Sync daemon state with the extension
-    };
-
     # Gnome window manager
     "org/gnome/mutter" = {
       "edge-tiling" = true;
@@ -44,16 +38,20 @@
       "disable-user-extensions" = false;
     
       "enabled-extensions" = [
+        "clipboard-indicator@tudmotu.com" # Clipboard manager
         "places-menu@gnome-shell-extensions.gcampax.github.com" # Shop "Places" menu in top bar
         "windowsNavigator@gnome-shell-extensions.gcampax.github.com" # Select windows in overview mode by Alt+number
-        "GPaste@gnome-shell-extensions.gnome.org" # Clipboard integration
         "System_Monitor@bghome.gmail.com" # System monitor integrated into the top bar
       ];
+    };
+
+    # Clipboard manager config
+    "org/gnome/shell/extensions/clipboard-indicator" = {
+      "toggle-menu" = [ "<Control><Alt>h" ]; # Show the clipboard manger panel by pressing Ctrl+Alt+h
     };
   };
 
   home.packages = with pkgs; [
-    gpaste # Clipboard management system with GNOME integration
     libgtop # Library to read running processed. Used by System Monitor extension.
   ];
   home.sessionVariables."GI_TYPELIB_PATH" = "/etc/profiles/per-user/${username}/lib/girepository-1.0"; # Make Gnome libraries discoverable
