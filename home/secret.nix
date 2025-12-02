@@ -12,6 +12,7 @@
     settings = {
       Browser.Enabled = true;
       Browser.UpdateBinaryPath = false;
+      Browser.SearchInAllDatabases = true; # Search in all open databases for matching credentials
 
       FdoSecrets.Enabled = true;
 
