@@ -23,6 +23,7 @@
         HidePasswords = true;
       };
 
+      Security.LockDatabaseIdle = false; # Lock databases after inactivity of configured time.
       SSHAgent.Enabled = true;
     };
   };
