@@ -23,6 +23,7 @@
         HidePasswords = true;
       };
 
+      Security.IconDownloadFallback = true; #Use DuckDuckGo service to download website icons
       Security.LockDatabaseIdle = false; # Lock databases after inactivity of configured time.
       SSHAgent.Enabled = true;
     };
