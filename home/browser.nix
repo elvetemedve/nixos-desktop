@@ -1,8 +1,9 @@
 { pkgs, ... }:
 {
-  # Install the Chromium web brwoser
-  programs.chromium.enable = true;
-
+  home.packages = with pkgs; [
+    brave
+  ];
+  
   # Install the Firefox web browser
   programs.firefox = {
     enable = true;
