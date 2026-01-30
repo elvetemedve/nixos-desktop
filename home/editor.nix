@@ -2,6 +2,7 @@
 {
   home.packages = with pkgs; [
     inkscape # Vector graphics editor
+    joplin-desktop # Open source note taking and to-do application with synchronisation capabilities
     gimp # Graphics editor
     pinta # Simple raster graphics editor
   ];
