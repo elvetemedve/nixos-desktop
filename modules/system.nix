@@ -122,6 +122,24 @@
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
+  # Install KeePassXC 2.8.0 pre-release/development version
+  nixpkgs.overlays = [
+    (final: prev: {
+      keepassxc = prev.keepassxc.overrideAttrs (oldAttrs: {
+        src = prev.fetchFromGitHub {
+          owner = "keepassxreboot";
+          repo = "keepassxc";
+          rev = "5bd42c4725b54bab8114bb41303159aec9f63fa4";  # specific commit or branch name
+          hash = "sha256-/mbYdjuWCpJc93ob4StNYUUB7BHubqlruMhcXDMQnN0=";
+        };
+        version = "git-unstable";
+
+        # Add keyutils to build inputs
+        buildInputs = oldAttrs.buildInputs ++ [ prev.keyutils ];
+      });
+    })
+  ];
+
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
@@ -132,6 +150,13 @@
     usbutils # Install CLI commands like lsusb
     lshw # Display hardware information report
     net-tools # Install netstat
+
+    # Install PolicyKit rule to allow Quick Unlock action for KeePassXC
+    (pkgs.runCommand "keepassxc-polkit-policy" {} ''
+      mkdir -p $out/share/polkit-1/actions
+      cp ${config.home-manager.users.yourusername.home.packages.keepassxc or pkgs.keepassxc}/share/polkit-1/actions/org.keepassxc.KeePassXC.policy \
+         $out/share/polkit-1/actions/
+    '')
   ];
 
   # Set Helix as default text editor
