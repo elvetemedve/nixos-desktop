@@ -2,6 +2,7 @@
 {
   home.packages = with pkgs; [
     magic-wormhole # Securely transfer data between computers
+    pynitrokey # CLI tool for NitroKey management
   ];
 
   # KeePassXC offline password manager
