@@ -34,6 +34,9 @@
         "privacy.clearOnShutdown_v2.siteSettings" = false;
         "privacy.sanitize.sanitizeOnShutdown" = false;
         "webgl.disabled" = false;
+
+        # Disable saving passwords by the broser (as it's managed by KeePass)
+        "signon.rememberSignons" = false;
       };
     };
   };
