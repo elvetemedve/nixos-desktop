@@ -11,16 +11,23 @@
       enabled-extensions = [ "vicinae@dagimg-dot" ];
     };
 
-    # Register [Alt + Space] hotkey for showing the Vicinae app
+    # Register [Alt + Space] hotkey for showing the Vicinae launcher
+    # Register [Control + Alt + h] hotkey for showing the Vicinae clipboard history
     "org/gnome/settings-daemon/plugins/media-keys" = {
       custom-keybindings = [
         "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/"
+        "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom1/"
       ];
     };
     "org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0" = {
       "binding" = "<Alt>space";
       "command" = "vicinae toggle";
       "name" = "Vicinae";
+    };
+    "org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom1" = {
+      "binding" = "<Control><Alt>h";
+      "command" = "vicinae deeplink vicinae://extensions/vicinae/clipboard/history";
+      "name" = "Show clipboard history";
     };
   };
 

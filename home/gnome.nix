@@ -38,16 +38,10 @@
       "disable-user-extensions" = false;
     
       "enabled-extensions" = [
-        "clipboard-indicator@tudmotu.com" # Clipboard manager
         "places-menu@gnome-shell-extensions.gcampax.github.com" # Shop "Places" menu in top bar
         "windowsNavigator@gnome-shell-extensions.gcampax.github.com" # Select windows in overview mode by Alt+number
         "System_Monitor@bghome.gmail.com" # System monitor integrated into the top bar
       ];
-    };
-
-    # Clipboard manager config
-    "org/gnome/shell/extensions/clipboard-indicator" = {
-      "toggle-menu" = [ "<Control><Alt>h" ]; # Show the clipboard manger panel by pressing Ctrl+Alt+h
     };
   };
 
@@ -152,27 +146,6 @@
       "video/3gpp2" = "mpv.desktop";
       "video/dv" = "mpv.desktop";
       "video/vnd.avi" = "mpv.desktop";
-    };
-  };
-
-  # Run GPaste-Daemon as user service
-  systemd.user.services = {
-    "org.gnome.GPaste" = {
-      Unit = {
-        Description = "GPaste daemon";
-        PartOf = "graphical-session.target";
-        After = "graphical-session.target";
-      };
-
-      Service = {
-        Type = "dbus";
-        BusName = "org.gnome.GPaste";
-        ExecStart = "${pkgs.gpaste}/libexec/gpaste/gpaste-daemon";
-      };
-
-      Install = {
-        WantedBy = [ "graphical-session.target" ];
-      };
     };
   };
 }
