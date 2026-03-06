@@ -13,10 +13,12 @@
 
     # Register [Alt + Space] hotkey for showing the Vicinae launcher
     # Register [Control + Alt + h] hotkey for showing the Vicinae clipboard history
+    # Register [Control + Alt + w] hotkey for showing the Vicinae switch windows panel
     "org/gnome/settings-daemon/plugins/media-keys" = {
       custom-keybindings = [
         "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/"
         "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom1/"
+        "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom2/"
       ];
     };
     "org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0" = {
@@ -28,6 +30,11 @@
       "binding" = "<Control><Alt>h";
       "command" = "vicinae deeplink vicinae://extensions/vicinae/clipboard/history";
       "name" = "Show clipboard history";
+    };
+    "org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom2" = {
+      "binding" = "<Control><Alt>w";
+      "command" = "vicinae deeplink vicinae://extensions/vicinae/wm/switch-windows";
+      "name" = "Show switch windows";
     };
   };
 
