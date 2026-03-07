@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, vicinae, ... }:
 
 {
   imports = [
@@ -15,6 +15,7 @@
     ../../home/terminal.nix
     ../../home/utility.nix
     ../../home/video.nix
+    vicinae.homeManagerModules.default
   ];
 
   programs.git = {

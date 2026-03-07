@@ -1,4 +1,4 @@
-{ pkgs, lib, ... }:
+{ pkgs, vicinae-extensions, ... }:
 {
   dconf.settings = {
     # Disable [Alt + Space] hotkey for activating the actual window menu
@@ -19,6 +19,7 @@
         "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/"
         "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom1/"
         "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom2/"
+        "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom3/"
       ];
     };
     "org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0" = {
@@ -36,19 +37,42 @@
       "command" = "vicinae deeplink vicinae://extensions/vicinae/wm/switch-windows";
       "name" = "Show switch windows";
     };
+    "org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom3" = {
+      "binding" = "<Control><Alt>e";
+      "command" = "vicinae deeplink vicinae://extensions/vicinae/core/search-emojis";
+      "name" = "Show emojis";
+    };
   };
-
-  # Start the Vicinae server right after activating the NixOS configuration
-  home.activation.enableVicinae = lib.hm.dag.entryAfter ["writeBoundary"] ''
-    $DRY_RUN_CMD systemctl --user enable vicinae.service --now || true
-  '';
-
-  # Start the Vicinae server when the systemd boots up.
-  home.file.".config/systemd/user/graphical-session.target.wants/vicinae.service".source = "${pkgs.vicinae}/lib/systemd/user/vicinae.service";
 
   home.packages = with pkgs; [
     file # Determine the type of the given file
     htop # An interactive process viewer
-    vicinae gnomeExtensions.vicinae # A focused launcher for your desktop — native, fast, extensible
+    gnomeExtensions.vicinae # Gnome extension for Vicinae - focused launcher for your desktop
   ];
+
+  services.vicinae = {
+    enable = true;
+    systemd = {
+      enable = true;
+      autoStart = true;
+      environment = {
+        USE_LAYER_SHELL = 1;
+      };
+    };
+    extensions = with vicinae-extensions.packages.${pkgs.stdenv.hostPlatform.system}; [
+      # Extension names can be found in the link below, it's just the folder names
+      # https://github.com/vicinaehq/extensions/tree/main/extensions
+      dashboard-icons
+      firefox
+      fuzzy-files
+      github
+      gnome-dnd
+      gnome-settings
+      html-symbol-finder
+      nix
+      power-profile
+      process-manager
+      pulseaudio
+    ];
+  };
 }

@@ -6,9 +6,11 @@
     # substituers will be appended to the default substituters when fetching packages
     extra-substituters = [
       "https://nix-community.cachix.org"
+      "https://vicinae.cachix.org"
     ];
     extra-trusted-public-keys = [
       "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+      "vicinae.cachix.org-1:1kDrfienkGHPYbkpNj1mWTr7Fm1+zcenzgTizIcI3oc="
     ];
   };
 
@@ -22,9 +24,17 @@
       url = "github:elvetemedve/nixos-06cb-009a-fingerprint-sensor/master";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    vicinae = {
+      url = "github:vicinaehq/vicinae";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    vicinae-extensions = {
+      url = "github:vicinaehq/extensions";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = inputs@{ nixpkgs, home-manager, nixos-06cb-009a-fingerprint-sensor, ... }: {
+  outputs = inputs@{ nixpkgs, home-manager, nixos-06cb-009a-fingerprint-sensor, vicinae, vicinae-extensions, ... }: {
     nixosConfigurations = {
 
       "ThinkPadP16s" = let
