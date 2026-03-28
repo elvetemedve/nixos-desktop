@@ -143,6 +143,7 @@
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
+    exfat exfatprogs # exFAT filesystem and userspace utilities
     helix # Post-modern modal text editor.
     pciutils # Install CLI commands like lspci
     pwvucontrol # Pipewire Volume Control tool.
