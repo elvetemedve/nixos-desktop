@@ -147,6 +147,7 @@
     pciutils # Install CLI commands like lspci
     pwvucontrol # Pipewire Volume Control tool.
     gnome-network-displays # Miracast implementation for GNOME Desktop
+    gparted # Partition editor for graphically managing your disk partitions.
     usbutils # Install CLI commands like lsusb
     lshw # Display hardware information report
     net-tools # Install netstat
