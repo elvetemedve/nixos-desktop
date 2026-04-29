@@ -25,5 +25,6 @@
       email = "bghome@gmail.com";
       safe.directory = "/etc/nixos";
     };
+    signing.format = "openpgp";
   };
 }
