@@ -129,13 +129,16 @@
         src = prev.fetchFromGitHub {
           owner = "keepassxreboot";
           repo = "keepassxc";
-          rev = "5bd42c4725b54bab8114bb41303159aec9f63fa4";  # specific commit or branch name
-          hash = "sha256-/mbYdjuWCpJc93ob4StNYUUB7BHubqlruMhcXDMQnN0=";
+          rev = "703855bec3bbe5d2d3e8efc3a5c80a8a33bdb5ce";  # specific commit or branch name
+          hash = "sha256-R2eZKjwS8fKRKVgjNQpaZ+w6gDFKiaPT67RBBJIaJa8=";
         };
         version = "git-unstable";
 
         # Add keyutils to build inputs
         buildInputs = oldAttrs.buildInputs ++ [ prev.keyutils ];
+
+        # Disable patches created for KeePassXC 2.7.x code
+        patches = [];
       });
     })
   ];
