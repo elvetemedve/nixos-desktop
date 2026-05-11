@@ -17,9 +17,12 @@
 
       FdoSecrets.Enabled = true;
 
+      General.UpdateCheckMessageShown = false;
+
       GUI = {
         AdvancedSettings = true;
         ApplicationTheme = "dark";
+        CheckForUpdates = false;
         CompactMode = true;
         HidePasswords = true;
       };
