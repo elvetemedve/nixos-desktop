@@ -29,17 +29,17 @@
     };
     "org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom1" = {
       "binding" = "<Control><Alt>h";
-      "command" = "vicinae deeplink vicinae://extensions/vicinae/clipboard/history";
+      "command" = "vicinae deeplink vicinae://launch/clipboard/history";
       "name" = "Show clipboard history";
     };
     "org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom2" = {
       "binding" = "<Control><Alt>w";
-      "command" = "vicinae deeplink vicinae://extensions/vicinae/wm/switch-windows";
+      "command" = "vicinae deeplink vicinae://launch/wm/switch-windows";
       "name" = "Show switch windows";
     };
     "org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom3" = {
       "binding" = "<Control><Alt>e";
-      "command" = "vicinae deeplink vicinae://extensions/vicinae/core/search-emojis";
+      "command" = "vicinae deeplink vicinae://launch/core/search-emojis";
       "name" = "Show emojis";
     };
   };
