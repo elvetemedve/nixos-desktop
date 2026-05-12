@@ -106,6 +106,9 @@
     enableSSHSupport = true;
   };
 
+  virtualisation.libvirtd.enable = true;
+  programs.virt-manager.enable = true;
+
   # Install LocalSend, sharing files to nearby devices.
   programs.localsend.enable = true;
 

@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, config, ... }:
 {
   home.packages = with pkgs; [
     brave
@@ -6,6 +6,7 @@
   
   # Install the Firefox web browser
   programs.firefox = {
+    configPath = "${config.xdg.configHome}/mozilla/firefox";
     enable = true;
     languagePacks = [
       "en-GB"
