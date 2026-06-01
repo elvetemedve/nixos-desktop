@@ -139,7 +139,7 @@
           owner = "keepassxreboot";
           repo = "keepassxc";
           rev = "703855bec3bbe5d2d3e8efc3a5c80a8a33bdb5ce";  # specific commit or branch name
-          hash = "sha256-R2eZKjwS8fKRKVgjNQpaZ+w6gDFKiaPT67RBBJIaJa8=";
+          hash = "sha256-NO1oX1YiO7eb8xXcnl14t7xinngnMflQeTc4rge1pnI=";
         };
         version = "git-unstable";
 
