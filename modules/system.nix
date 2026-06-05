@@ -106,12 +106,6 @@
     enableSSHSupport = true;
   };
 
-  # Install Docker in rootless mode.
-  virtualisation.docker.rootless = {
-    enable = true;
-    setSocketVariable = true;
-  };
-
   virtualisation.libvirtd.enable = true;
   programs.virt-manager.enable = true;
 
