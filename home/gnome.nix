@@ -4,6 +4,7 @@
     "org/gnome/desktop/interface" = {
       "clock-show-weekday" = true; # Display current day of the week on the top bar
       "color-scheme" = "prefer-dark"; # Change Gnome Shell theme to dark
+      "gtk-enable-primary-paste" = true; # Enable copy by mouse selection and paste by mouse middle button
     };
 
     # Calendar settings
