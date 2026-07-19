@@ -50,7 +50,7 @@
     gnomeExtensions.vicinae # Gnome extension for Vicinae - focused launcher for your desktop
   ];
 
-  services.vicinae = {
+  programs.vicinae = {
     enable = true;
     systemd = {
       enable = true;
