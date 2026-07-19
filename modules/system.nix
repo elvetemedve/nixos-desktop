@@ -64,6 +64,9 @@
 
   # Install fwup daemon and user space client, for managing device firmware updates.
   services.fwupd.enable = true;
+
+  # Offline language translation application with HTTP REST API.
+  services.libretranslate.enable = true;
   
   # Enable CUPS to print documents.
   services.printing.enable = true;
