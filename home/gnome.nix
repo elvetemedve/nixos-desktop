@@ -36,6 +36,7 @@
 
     # Gnome Shell
     "org/gnome/shell" = {
+      "always-show-log-out" = true;
       "disable-user-extensions" = false;
     
       "enabled-extensions" = [
