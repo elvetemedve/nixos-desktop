@@ -45,6 +45,7 @@
   };
 
   home.packages = with pkgs; [
+    claude-code # Agentic AI tool
     file # Determine the type of the given file
     htop # An interactive process viewer
     gnomeExtensions.vicinae # Gnome extension for Vicinae - focused launcher for your desktop
