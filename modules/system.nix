@@ -96,7 +96,7 @@
   users.users.geza = {
     isNormalUser = true;
     description = "Géza Búza";
-    extraGroups = [ "networkmanager" "wheel" ];
+    extraGroups = [ "networkmanager" "wheel" "docker" ];
     uid = 1000;
   };
 
@@ -160,7 +160,10 @@
     gparted # Partition editor for graphically managing your disk partitions.
     usbutils # Install CLI commands like lsusb
     lshw # Display hardware information report
+    mcp-nixos # Real, up-to-the-second information about NixOS packages, options, Home Manager, nix-darwin, flakes, and friends.
     net-tools # Install netstat
+    nodejs
+    pnpm
 
     # Install PolicyKit rule to allow Quick Unlock action for KeePassXC
     (pkgs.runCommand "keepassxc-polkit-policy" {} ''
@@ -202,5 +205,12 @@
   # Before changing this value read the documentation for this option
   # (e.g. man configuration.nix or on https://nixos.org/nixos/options.html).
   system.stateVersion = "24.11"; # Did you read the comment?
+
+  virtualisation.docker = {
+    enable = true;
+    daemon.settings = {
+      dns = [ "1.1.1.1" "8.8.8.8" ];
+    };
+  };
 
 }
