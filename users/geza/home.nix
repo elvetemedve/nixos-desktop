@@ -26,5 +26,6 @@
       safe.directory = "/etc/nixos";
     };
     signing.format = "openpgp";
+    signing.key = "C3C22594964F80C7";
   };
 }
