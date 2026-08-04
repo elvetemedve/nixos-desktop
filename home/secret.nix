@@ -17,7 +17,7 @@
 
       FdoSecrets.Enabled = true;
 
-      General.UpdateCheckMessageShown = false;
+      General.UpdateCheckMessageShown = true; # Hides the popup message "Check for updates on startup?"
 
       GUI = {
         AdvancedSettings = true;
