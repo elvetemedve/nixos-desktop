@@ -20,6 +20,7 @@
         "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom1/"
         "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom2/"
         "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom3/"
+        "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom4/"
       ];
     };
     "org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0" = {
@@ -42,6 +43,11 @@
       "command" = "vicinae deeplink vicinae://launch/core/search-emojis";
       "name" = "Show emojis";
     };
+    "org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom4" = {
+      "binding" = "<Control><Alt>t";
+      "command" = "vicinae deeplink vicinae://launch/@elvetemedve/libretranslate/translate";
+      "name" = "Show language translator";
+    };
   };
 
   home.packages = with pkgs; [
@@ -53,6 +59,21 @@
 
   programs.vicinae = {
     enable = true;
+    settings = {
+      font = {
+          normal = {
+            "size" = 13;
+          };
+       };
+       theme = {
+          light = {
+            name = "elementary-dark";
+          };
+       };
+       launcher_window = {
+          "opacity" = 0.95;
+      };
+    };
     systemd = {
       enable = true;
       autoStart = true;
