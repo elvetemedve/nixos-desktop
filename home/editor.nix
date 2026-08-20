@@ -1,8 +1,8 @@
 { pkgs, ... }:
 {
   home.packages = with pkgs; [
+    affine # A workspace with fully merged docs, whiteboards and databases
     inkscape # Vector graphics editor
-    joplin-desktop # Open source note taking and to-do application with synchronisation capabilities
     gimp # Graphics editor
     pinta # Simple raster graphics editor
   ];
