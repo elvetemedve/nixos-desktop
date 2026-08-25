@@ -154,6 +154,7 @@
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
+    bintools # The GNU Binutils are a collection of binary tools.
     exfat exfatprogs # exFAT filesystem and userspace utilities
     helix # Post-modern modal text editor.
     pciutils # Install CLI commands like lspci
