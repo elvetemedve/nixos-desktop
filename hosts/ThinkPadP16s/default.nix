@@ -7,6 +7,8 @@
     ../../modules/security.nix
     ../../modules/system.nix
 
+    ../../modules/ddj-flx10.nix
+
     ./hardware-configuration.nix
   ];
 
