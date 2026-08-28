@@ -15,6 +15,7 @@
     ../../home/terminal.nix
     ../../home/utility.nix
     ../../home/video.nix
+    ../../home/virtualdj.nix
     vicinae.homeManagerModules.default
   ];
 

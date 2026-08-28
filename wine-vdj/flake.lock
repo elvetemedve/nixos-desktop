@@ -1,0 +1,63 @@
+{
+  "nodes": {
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1787736819,
+        "narHash": "sha256-cV5xEJJK3BvhU8rEd4mC9UsmDi5qscv/kzGPhBRC5WA=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "9fbb54b33e91ee4ca368e35a78e0613c720600b3",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "pipeasio-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1786040098,
+        "narHash": "sha256-5CrcE27vMlRhc+Xu8TSfn1lnF4odAwaZoeh5OvcGi44=",
+        "owner": "M0n7y5",
+        "repo": "pipeasio",
+        "rev": "306c0b56c1c9e2dbfee476a2df861ae4433a06f3",
+        "type": "github"
+      },
+      "original": {
+        "owner": "M0n7y5",
+        "ref": "v1.5.0",
+        "repo": "pipeasio",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "nixpkgs": "nixpkgs",
+        "pipeasio-src": "pipeasio-src",
+        "wine-src": "wine-src"
+      }
+    },
+    "wine-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1787343907,
+        "narHash": "sha256-sCitkdWN2Sfewo7sRp3yPF7MYYPvdPv5fo5Es3J76AQ=",
+        "owner": "wine-mirror",
+        "repo": "wine",
+        "rev": "8da89f8493b21ebfbe344a54dbef0cde23c7ea59",
+        "type": "github"
+      },
+      "original": {
+        "owner": "wine-mirror",
+        "ref": "wine-11.16",
+        "repo": "wine",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

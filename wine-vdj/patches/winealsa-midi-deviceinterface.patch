@@ -1,0 +1,268 @@
+--- a/dlls/winealsa.drv/alsamidi.c
++++ b/dlls/winealsa.drv/alsamidi.c
+@@ -31,7 +31,12 @@
+ #include <stdarg.h>
+ #include <stdio.h>
+ #include <stdint.h>
++#include <stdlib.h>
++#include <string.h>
++#include <limits.h>
+ #include <unistd.h>
++#include <fcntl.h>
++#include <dirent.h>
+ #include <pthread.h>
+ #include <time.h>
+ #include <alsa/asoundlib.h>
+@@ -50,6 +55,12 @@
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(midi);
+ 
++/* Windows exposes a USB MIDI port's device-interface path through
++ * DRV_QUERYDEVICEINTERFACE, and applications parse the vid_/pid_ fields out of
++ * it in order to recognise particular hardware.  Synthesise an equivalent path
++ * from the ALSA card's USB attributes so that they work under Wine as well. */
++#define MIDI_IF_PATH_LEN 160
++
+ struct midi_dest
+ {
+     BOOL                bEnabled;
+@@ -60,6 +71,7 @@
+     snd_seq_t          *seq;
+     snd_seq_addr_t      addr;
+     int                 port_out;
++    WCHAR               if_path[MIDI_IF_PATH_LEN];
+ };
+ 
+ struct midi_src
+@@ -73,6 +85,7 @@
+     snd_seq_t          *seq;
+     snd_seq_addr_t      addr;
+     int                 port_in;
++    WCHAR               if_path[MIDI_IF_PATH_LEN];
+ };
+ 
+ static pthread_mutex_t seq_mutex = PTHREAD_MUTEX_INITIALIZER;
+@@ -282,12 +295,101 @@
+     return MOD_FMSYNTH;
+ }
+ 
++struct usb_info
++{
++    WCHAR path[MIDI_IF_PATH_LEN];
++    unsigned int vid, pid;
++    BOOL valid;
++};
++
++static BOOL read_sysfs_line(const char *path, char *buf, size_t size)
++{
++    ssize_t n;
++    int fd;
++
++    if ((fd = open(path, O_RDONLY)) == -1) return FALSE;
++    n = read(fd, buf, size - 1);
++    close(fd);
++    if (n <= 0) return FALSE;
++    buf[n] = '\0';
++    while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r')) buf[--n] = '\0';
++    return n > 0;
++}
++
++/* locate the USB interface carrying MIDI streaming (class 1, subclass 3) */
++static int find_midi_interface(const char *usb_dir)
++{
++    char path[PATH_MAX + 320], buf[16];
++    struct dirent *de;
++    int mi = -1;
++    DIR *dir;
++
++    if (!(dir = opendir(usb_dir))) return -1;
++    while ((de = readdir(dir)))
++    {
++        int cfg, intf;
++
++        if (sscanf(de->d_name, "%*[^:]:%d.%d", &cfg, &intf) != 2) continue;
++        snprintf(path, sizeof(path), "%s/%s/bInterfaceClass", usb_dir, de->d_name);
++        if (!read_sysfs_line(path, buf, sizeof(buf)) || strtol(buf, NULL, 16) != 1) continue;
++        snprintf(path, sizeof(path), "%s/%s/bInterfaceSubClass", usb_dir, de->d_name);
++        if (!read_sysfs_line(path, buf, sizeof(buf)) || strtol(buf, NULL, 16) != 3) continue;
++        mi = intf;
++        break;
++    }
++    closedir(dir);
++    return mi;
++}
++
++static void get_usb_info(snd_seq_client_info_t *cinfo, struct usb_info *info)
++{
++    char base[64], usb_dir[PATH_MAX], path[PATH_MAX + 64];
++    char vid[16], pid[16], serial[64], out[MIDI_IF_PATH_LEN];
++    int card, mi, len;
++    unsigned int i;
++
++    memset(info, 0, sizeof(*info));
++
++    if ((card = snd_seq_client_info_get_card(cinfo)) < 0) return;
++
++    /* cardN/device is the USB *interface*; the ids live on its parent device */
++    snprintf(base, sizeof(base), "/sys/class/sound/card%d/device/..", card);
++    if (!realpath(base, usb_dir)) return;
++
++    snprintf(path, sizeof(path), "%s/idVendor", usb_dir);
++    if (!read_sysfs_line(path, vid, sizeof(vid))) return;
++    snprintf(path, sizeof(path), "%s/idProduct", usb_dir);
++    if (!read_sysfs_line(path, pid, sizeof(pid))) return;
++    snprintf(path, sizeof(path), "%s/serial", usb_dir);
++    if (!read_sysfs_line(path, serial, sizeof(serial))) strcpy(serial, "0");
++
++    for (i = 0; serial[i]; i++)
++        if (serial[i] >= 'A' && serial[i] <= 'Z') serial[i] += 'a' - 'A';
++
++    if ((mi = find_midi_interface(usb_dir)) >= 0)
++        len = snprintf(out, sizeof(out), "\\\\?\\usb#vid_%s&pid_%s&mi_%02d#%s#"
++                       "{6994ad04-93ef-11d0-a3cc-00a0c9223196}", vid, pid, mi, serial);
++    else
++        len = snprintf(out, sizeof(out), "\\\\?\\usb#vid_%s&pid_%s#%s#"
++                       "{6994ad04-93ef-11d0-a3cc-00a0c9223196}", vid, pid, serial);
++    if (len <= 0 || len >= (int)sizeof(out)) return;
++
++    ntdll_umbstowcs(out, len + 1, info->path, ARRAY_SIZE(info->path));
++    info->vid = strtoul(vid, NULL, 16);
++    info->pid = strtoul(pid, NULL, 16);
++    info->valid = TRUE;
++    TRACE("card %d -> %s\n", card, wine_dbgstr_w(info->path));
++}
++
+ static void port_add(snd_seq_client_info_t* cinfo, snd_seq_port_info_t* pinfo, unsigned int cap, unsigned int type)
+ {
+     char name[MAXPNAMELEN];
+     unsigned int len;
+     struct midi_dest *dest;
+     struct midi_src *src;
++    struct usb_info usb;
++
++    get_usb_info(cinfo, &usb);
+ 
+     if (cap & SND_SEQ_PORT_CAP_WRITE) {
+         TRACE("OUT (%d:%s:%s:%d:%s:%x)\n",snd_seq_client_info_get_client(cinfo),
+@@ -305,12 +407,21 @@
+         memset( dest, 0, sizeof(*dest) );
+         dest->addr = *snd_seq_port_info_get_addr(pinfo);
+ 
+-        /* Manufac ID. We do not have access to this with soundcard.h
+-         * Does not seem to be a problem, because in mmsystem.h only
+-         * Microsoft's ID is listed.
+-         */
+-        dest->caps.wMid = 0x00FF;
+-        dest->caps.wPid = 0x0001;     /* FIXME Product ID  */
++        if (usb.valid)
++        {
++            dest->caps.wMid = usb.vid;
++            dest->caps.wPid = usb.pid;
++            memcpy(dest->if_path, usb.path, sizeof(dest->if_path));
++        }
++        else
++        {
++            /* Manufac ID. We do not have access to this with soundcard.h
++             * Does not seem to be a problem, because in mmsystem.h only
++             * Microsoft's ID is listed.
++             */
++            dest->caps.wMid = 0x00FF;
++            dest->caps.wPid = 0x0001;     /* FIXME Product ID  */
++        }
+         /* Product Version. We simply say "1" */
+         dest->caps.vDriverVersion = 0x001;
+         /* The following are mandatory for MOD_MIDIPORT */
+@@ -380,12 +491,21 @@
+         memset( src, 0, sizeof(*src) );
+         src->addr = *snd_seq_port_info_get_addr(pinfo);
+ 
+-        /* Manufac ID. We do not have access to this with soundcard.h
+-         * Does not seem to be a problem, because in mmsystem.h only
+-         * Microsoft's ID is listed.
+-         */
+-        src->caps.wMid = 0x00FF;
+-        src->caps.wPid = 0x0001;      /* FIXME Product ID  */
++        if (usb.valid)
++        {
++            src->caps.wMid = usb.vid;
++            src->caps.wPid = usb.pid;
++            memcpy(src->if_path, usb.path, sizeof(src->if_path));
++        }
++        else
++        {
++            /* Manufac ID. We do not have access to this with soundcard.h
++             * Does not seem to be a problem, because in mmsystem.h only
++             * Microsoft's ID is listed.
++             */
++            src->caps.wMid = 0x00FF;
++            src->caps.wPid = 0x0001;      /* FIXME Product ID  */
++        }
+         /* Product Version. We simply say "1" */
+         src->caps.vDriverVersion = 0x001;
+         src->caps.dwSupport = 0; /* mandatory with MIDIINCAPS */
+@@ -1384,6 +1504,33 @@
+     return err;
+ }
+ 
++static unsigned int if_path_len(const WCHAR *path)
++{
++    unsigned int n = 0;
++
++    while (path[n]) n++;
++    return n;
++}
++
++static UINT midi_get_interface_size(const WCHAR *path, DWORD *size)
++{
++    if (!path[0]) return MMSYSERR_NOTSUPPORTED;
++    if (!size) return MMSYSERR_INVALPARAM;
++    *size = (if_path_len(path) + 1) * sizeof(WCHAR);
++    return MMSYSERR_NOERROR;
++}
++
++static UINT midi_get_interface(const WCHAR *path, WCHAR *out, DWORD size)
++{
++    unsigned int needed;
++
++    if (!path[0]) return MMSYSERR_NOTSUPPORTED;
++    needed = (if_path_len(path) + 1) * sizeof(WCHAR);
++    if (!out || size < needed) return MMSYSERR_INVALPARAM;
++    memcpy(out, path, needed);
++    return MMSYSERR_NOERROR;
++}
++
+ NTSTATUS alsa_midi_out_message(void *args)
+ {
+     struct midi_out_message_params *params = args;
+@@ -1434,6 +1581,15 @@
+     case MODM_RESET:
+         *params->err = midi_out_reset(params->dev_id);
+         break;
++    case DRV_QUERYDEVICEINTERFACESIZE:
++        *params->err = params->dev_id >= num_dests ? MMSYSERR_BADDEVICEID :
++            midi_get_interface_size(dests[params->dev_id].if_path, (DWORD *)params->param_1);
++        break;
++    case DRV_QUERYDEVICEINTERFACE:
++        *params->err = params->dev_id >= num_dests ? MMSYSERR_BADDEVICEID :
++            midi_get_interface(dests[params->dev_id].if_path, (WCHAR *)params->param_1,
++                               params->param_2);
++        break;
+     default:
+         TRACE("Unsupported message\n");
+         *params->err = MMSYSERR_NOTSUPPORTED;
+@@ -1489,6 +1645,15 @@
+     case MIDM_RESET:
+         *params->err = midi_in_reset(params->dev_id, params->notify);
+         break;
++    case DRV_QUERYDEVICEINTERFACESIZE:
++        *params->err = params->dev_id >= num_srcs ? MMSYSERR_BADDEVICEID :
++            midi_get_interface_size(srcs[params->dev_id].if_path, (DWORD *)params->param_1);
++        break;
++    case DRV_QUERYDEVICEINTERFACE:
++        *params->err = params->dev_id >= num_srcs ? MMSYSERR_BADDEVICEID :
++            midi_get_interface(srcs[params->dev_id].if_path, (WCHAR *)params->param_1,
++                               params->param_2);
++        break;
+     default:
+         TRACE("Unsupported message\n");
+         *params->err = MMSYSERR_NOTSUPPORTED;

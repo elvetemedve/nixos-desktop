@@ -1,0 +1,11 @@
+--- a/dlls/shell32/shlfolder.c
++++ b/dlls/shell32/shlfolder.c
+@@ -410,7 +410,7 @@
+ 
+     if (_ILIsDrive (pidl)) {
+         *pdwAttributes &= SFGAO_HASSUBFOLDER|SFGAO_FILESYSTEM|SFGAO_FOLDER|SFGAO_FILESYSANCESTOR|
+-	    SFGAO_DROPTARGET|SFGAO_HASPROPSHEET|SFGAO_CANLINK;
++	    SFGAO_DROPTARGET|SFGAO_HASPROPSHEET|SFGAO_CANLINK|SFGAO_CANRENAME;
+     } else if (has_guid && HCR_GetFolderAttributes(pidl, &dwAttributes)) {
+ 	*pdwAttributes = dwAttributes;
+     } else if (_ILGetDataPointer (pidl)) {

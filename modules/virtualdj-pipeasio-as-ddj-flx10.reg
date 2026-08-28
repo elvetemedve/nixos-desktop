@@ -1,0 +1,15 @@
+REGEDIT4
+
+; VirtualDJ pairs a controller with its ASIO driver by exact name, and its
+; DDJ-FLX10 definition looks for "DDJ-FLX10 ASIO" -- the name the AlphaTheta
+; driver registers on Windows. The subkey name under HKLM\Software\ASIO is
+; only the list/display name, so aliasing PipeASIO's CLSID under that name is
+; all VirtualDJ needs to treat PipeASIO as the controller's driver.
+;
+; pipeasio-register registers the same CLSID under HKLM\Software\ASIO\PipeASIO,
+; so both names appear in VirtualDJ's ASIO list and resolve to one driver. The
+; virtualdj launcher imports this file after running pipeasio-register.
+
+[HKEY_LOCAL_MACHINE\Software\ASIO\DDJ-FLX10 ASIO]
+"CLSID"="{2D3CA9E2-1193-4C5D-B5FD-38798F3DC074}"
+"Description"="DDJ-FLX10 ASIO"

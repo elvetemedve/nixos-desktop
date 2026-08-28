@@ -25,6 +25,9 @@ in
   # services.udev.extraRules is types.lines, so this merges with the rules
   # defined elsewhere rather than replacing them.
   services.udev.extraRules = ''
+    # AlphaTheta / Pioneer DJ controllers: let the seated user open the HID node.
+    SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2b73", GROUP="users", MODE="0660", TAG+="uaccess"
+
     # DDJ-FLX10: clear the jog screens' "NO AUDIO DRIVER" message on attach.
     ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", \
       ATTR{idVendor}=="2b73", ATTR{idProduct}=="0041", \

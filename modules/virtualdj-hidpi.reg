@@ -1,0 +1,7 @@
+Windows Registry Editor Version 5.00
+
+; Wine display DPI (LogPixels). 96 = 100% (Wine default), 120 = 125%,
+; 144 = 150%, 192 = 200%. Edit the dword value below to taste, then
+; re-import. Values here are decimal-as-hex, e.g. 144 decimal = 0x90.
+[HKEY_CURRENT_USER\Control Panel\Desktop]
+"LogPixels"=dword:000000C0

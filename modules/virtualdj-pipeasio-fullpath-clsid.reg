@@ -1,0 +1,15 @@
+REGEDIT4
+
+; An absolute InprocServer32 path is what makes the driver visible to
+; VirtualDJ. It calls GetFileAttributesW() on that value before loading a
+; driver, and a bare module name resolves against VirtualDJ's own working
+; directory (C:\Program Files\VirtualDJ), where pipeasio64.dll is not -- so a
+; bare name makes VirtualDJ skip the driver and report that it needs drivers.
+; Real ASIO drivers register an absolute path for the same reason.
+;
+; pipeasio-register writes the bare name "pipeasio64.dll", so the virtualdj
+; launcher imports this file afterwards to replace that value.
+
+[HKEY_LOCAL_MACHINE\Software\Classes\CLSID\{2D3CA9E2-1193-4C5D-B5FD-38798F3DC074}\InprocServer32]
+@="C:\\windows\\system32\\pipeasio64.dll"
+"ThreadingModel"="Apartment"

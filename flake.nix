@@ -32,15 +32,19 @@
       url = "github:vicinaehq/extensions";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    wine-vdj = {
+      url = "path:./wine-vdj";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = inputs@{ nixpkgs, home-manager, nixos-06cb-009a-fingerprint-sensor, vicinae, vicinae-extensions, ... }: {
+  outputs = inputs@{ nixpkgs, home-manager, nixos-06cb-009a-fingerprint-sensor, vicinae, vicinae-extensions, wine-vdj, ... }: {
     nixosConfigurations = {
 
       "ThinkPadP16s" = let
         username = "geza";
-        specialArgs = { inherit username; };
-      in 
+        specialArgs = { inherit username inputs; };
+      in
         nixpkgs.lib.nixosSystem {
         modules = [
           ./hosts/ThinkPadP16s

@@ -1,0 +1,17 @@
+--- a/dlls/winmm/winmm.c
++++ b/dlls/winmm/winmm.c
+@@ -881,8 +881,13 @@
+ 
+     TRACE("(%p, %04X, %08IX, %08IX)\n", hMidiIn, uMessage, dwParam1, dwParam2);
+ 
+-    if ((wmld = MMDRV_Get(hMidiIn, MMDRV_MIDIIN, FALSE)) == NULL)
++    if ((wmld = MMDRV_Get(hMidiIn, MMDRV_MIDIIN, FALSE)) == NULL) {
++	/* Some applications pass a device id rather than a handle in order to
++	 * query DRV_QUERYDEVICEINTERFACE[SIZE], as midiOutMessage() allows. */
++	if ((wmld = MMDRV_Get(hMidiIn, MMDRV_MIDIIN, TRUE)) != NULL)
++	    return MMDRV_PhysicalFeatures(wmld, uMessage, dwParam1, dwParam2);
+ 	return MMSYSERR_INVALHANDLE;
++    }
+ 
+     switch (uMessage) {
+     case MIDM_OPEN:
