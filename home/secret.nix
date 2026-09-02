@@ -16,6 +16,11 @@
       Browser.SearchInAllDatabases = true; # Search in all open databases for matching credentials
 
       FdoSecrets.Enabled = true;
+      # Serve Secret Service reads without the per-access confirmation dialog. Its
+      # "Remember" is in-memory per client connection (KeePassXC can't persist it
+      # across restarts yet, PR #13610), and external-ssd reconnects on every drive
+      # plug-in, so leaving it on means a prompt every time.
+      FdoSecrets.ConfirmAccessItem = false;
 
       General.UpdateCheckMessageShown = true; # Hides the popup message "Check for updates on startup?"
 
