@@ -2,6 +2,7 @@
 {
   imports = [
     ../../modules/browser.nix
+    ../../modules/egpu.nix
     ../../modules/gaming.nix
     ../../modules/webserver.nix
     ../../modules/security.nix
@@ -15,9 +16,5 @@
   ];
 
   networking.hostName = "ThinkPadP16s"; # Define your hostname.
-
-  # nouveau fails to init the eGPU's GSP firmware and can wedge suspend/resume
-  # (s2idle) if the eGPU is unplugged while the laptop is asleep.
-  boot.blacklistedKernelModules = [ "nouveau" ];
 }
 

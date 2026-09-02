@@ -13,6 +13,16 @@ let
     text = ''
       export WINEPREFIX=${prefix}
 
+      # VirtualDJ queries the DXGI swapchain and draws D2D glyph runs on every
+      # frame, and Wine's stubs there are plain FIXMEs rather than FIXME_ONCE,
+      # so each frame writes several unbuffered lines to stderr. Neither gap
+      # affects us: the swapchain's ScanlineOrdering/Scaling fields only matter
+      # for interlaced and stretched exclusive-fullscreen modes, and the
+      # ignored D2D options are CLIP|ENABLE_COLOR_FONT (text not clipped to its
+      # layout box, colour fonts drawn monochrome). Only these two channels'
+      # fixmes are silenced, so every other fixme, err and warn still shows.
+      export WINEDEBUG=fixme-dxgi,fixme-d2d
+
       # A rebuilt wine-vdj is a different Nix store path; a wineserver left
       # running from the previous one keeps serving this prefix with stale
       # binaries until it's killed off. Safe here: nothing else uses this
