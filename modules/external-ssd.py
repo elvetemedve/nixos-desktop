@@ -2,7 +2,7 @@
 
 Nothing here is privileged: udisksd does the device-mapper and mount work and
 polkit lets us ask for it, so there is no sudo, no setuid binary and no entry
-in /etc/crypttab.  See usb-vault.nix for why that authorisation holds.
+in /etc/crypttab.  See external-ssd.nix for why that authorisation holds.
 
 The passphrase is read from the running KeePassXC over the Secret Service API.
 It lives in this process's memory and in the D-Bus message to udisksd, and
@@ -57,7 +57,7 @@ SECRET_SERVICE_TIMEOUT = 60
 
 
 def fail(message):
-    print("usb-vault: " + message, file=sys.stderr)
+    print("external-ssd: " + message, file=sys.stderr)
     raise SystemExit(1)
 
 
@@ -214,7 +214,7 @@ COMMANDS = {"mount": cmd_mount, "umount": cmd_umount, "status": cmd_status}
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="usb-vault",
+        prog="external-ssd",
         description="Unlock and mount " + DEVICE + " without root.",
     )
     parser.add_argument("command", choices=sorted(COMMANDS))

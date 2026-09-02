@@ -2,9 +2,9 @@
 # passphrase ever sitting on this machine's unencrypted root filesystem.
 #
 # Plugging the drive in is the whole interaction: a udev rule starts
-# usb-vault.service in the *user's* systemd manager, which reads the
+# external-ssd.service in the *user's* systemd manager, which reads the
 # passphrase out of the running KeePassXC and hands it to udisks2 over D-Bus.
-# `usb-vault mount|umount|status` does the same thing by hand.
+# `external-ssd mount|umount|status` does the same thing by hand.
 #
 # Why none of this needs sudo, a setuid binary or an /etc/crypttab entry:
 #
@@ -47,19 +47,19 @@ let
   secretAttr = "veracrypt";
   secretValue = "usb-2tb";
 
-  usb-vault = pkgs.writers.writePython3Bin "usb-vault"
+  external-ssd = pkgs.writers.writePython3Bin "external-ssd"
     {
       libraries = [ pkgs.python3Packages.dbus-python ];
     }
     (builtins.replaceStrings
       [ "@device@" "@secretTool@" "@secretAttr@" "@secretValue@" ]
       [ device "${pkgs.libsecret}/bin/secret-tool" secretAttr secretValue ]
-      (builtins.readFile ./usb-vault.py));
+      (builtins.readFile ./external-ssd.py));
 in
 {
   # libsecret for `secret-tool lookup ${secretAttr} ${secretValue}`, which is
   # the quickest way to check the KeePassXC half in isolation.
-  environment.systemPackages = [ usb-vault pkgs.libsecret ];
+  environment.systemPackages = [ external-ssd pkgs.libsecret ];
 
   # Contents are irrelevant; existence is the flag. services.udisks2.settings
   # merges with its defaults, so udisks2.conf is left alone.
@@ -83,20 +83,20 @@ in
     # rather than PID 1, which is what keeps this unprivileged.
     ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", \
       ENV{ID_SERIAL}=="${serial}", \
-      ENV{SYSTEMD_USER_WANTS}+="usb-vault.service"
+      ENV{SYSTEMD_USER_WANTS}+="external-ssd.service"
   '';
 
-  systemd.user.services.usb-vault = {
+  systemd.user.services.external-ssd = {
     description = "Unlock and mount the VeraCrypt USB volume";
 
     # Deliberately not wantedBy anything: the udev rule above is the only
     # thing that starts it. That covers logging in with the drive already
     # attached too, since the user manager applies SYSTEMD_USER_WANTS when it
-    # enumerates devices at startup -- `usb-vault mount` is idempotent, so a
+    # enumerates devices at startup -- `external-ssd mount` is idempotent, so a
     # repeated trigger just reports the existing mount point.
     serviceConfig = {
       Type = "oneshot";
-      ExecStart = "${usb-vault}/bin/usb-vault mount";
+      ExecStart = "${external-ssd}/bin/external-ssd mount";
 
       # Long enough to sit through a KeePassXC master password prompt: at
       # login this can start before KeePassXC has autostarted, and the secret
@@ -116,14 +116,14 @@ in
   # altogether when the caller is the uid that mounted and unlocked the device
   # (uid 0 is exempt as well, but nothing here needs to reach for that). The
   # session bus is not involved: locking never touches KeePassXC.
-  systemd.services.usb-vault-lock = {
+  systemd.services.external-ssd-lock = {
     description = "Lock the VeraCrypt USB volume before sleep";
     before = [ "sleep.target" ];
     wantedBy = [ "sleep.target" ];
     serviceConfig = {
       Type = "oneshot";
       User = username;
-      ExecStart = "${usb-vault}/bin/usb-vault umount";
+      ExecStart = "${external-ssd}/bin/external-ssd umount";
     };
   };
 }

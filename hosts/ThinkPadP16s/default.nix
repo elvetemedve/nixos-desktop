@@ -8,7 +8,7 @@
     ../../modules/system.nix
 
     ../../modules/ddj-flx10.nix
-    ../../modules/usb-vault.nix
+    ../../modules/external-ssd.nix
     ../../modules/virtualdj.nix
 
     ./hardware-configuration.nix
