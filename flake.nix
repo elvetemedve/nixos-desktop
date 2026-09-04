@@ -36,6 +36,10 @@
       url = "path:./wine-vdj";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    blackwell-egpu-manager = {
+      url = "github:DamianKA1993/blackwell-egpu-manager/v1.5.4";
+      flake = false;
+    };
   };
 
   outputs = inputs@{ nixpkgs, home-manager, nixos-06cb-009a-fingerprint-sensor, vicinae, vicinae-extensions, wine-vdj, ... }: {

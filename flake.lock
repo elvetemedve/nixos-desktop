@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "blackwell-egpu-manager": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1788541797,
+        "narHash": "sha256-bs7BBc+RnHHak8X7BqZmbLE12IJNzrzRZQJ+FciQyZY=",
+        "owner": "DamianKA1993",
+        "repo": "blackwell-egpu-manager",
+        "rev": "f89c2099ab33a31ce46c25c8d1a012858f8e6767",
+        "type": "github"
+      },
+      "original": {
+        "owner": "DamianKA1993",
+        "ref": "v1.5.4",
+        "repo": "blackwell-egpu-manager",
+        "type": "github"
+      }
+    },
     "flake-compat": {
       "flake": false,
       "locked": {
@@ -130,6 +147,7 @@
     },
     "root": {
       "inputs": {
+        "blackwell-egpu-manager": "blackwell-egpu-manager",
         "home-manager": "home-manager",
         "nixos-06cb-009a-fingerprint-sensor": "nixos-06cb-009a-fingerprint-sensor",
         "nixpkgs": "nixpkgs",

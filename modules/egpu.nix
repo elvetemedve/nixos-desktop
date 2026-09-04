@@ -44,6 +44,8 @@ let
   '';
 in
 {
+  imports = [ ./blackwell-egpu-manager.nix ];
+
   # nouveau fails to init the eGPU's GSP firmware and can wedge suspend/resume
   # (s2idle) if the eGPU is unplugged while the laptop is asleep.
   boot.blacklistedKernelModules = [ "nouveau" ];
@@ -78,6 +80,15 @@ in
         nvidiaBusId = "PCI:34:0:0";
       };
     };
+
+    # Community tool that immediately kicks the eGPU's known bridge chips off
+    # the bus on hotplug/coldplug (udev), then manually disables ASPM/L1SS and
+    # forces a PCIe retrain on every bridge in the chain *before* nvidia ever
+    # touches the device. Targets this exact hardware (its udev rule literally
+    # matches "Intel Barlow Ridge (AORUS TB5)", 8086:5786) - see
+    # modules/blackwell-egpu-manager.nix. Use: `blackwell-egpu status`,
+    # `sudo blackwell-egpu set 3` (hybrid offload - what PRIME here needs).
+    programs.blackwellEgpuManager.enable = true;
   };
 
   # Compute-only eGPU: fully headless (no GDM/GNOME/Xorg), driver loads as a CUDA
@@ -111,5 +122,9 @@ in
       prime.offload.enable = lib.mkForce false;
       prime.sync.enable = lib.mkForce false;
     };
+
+    # See the `egpu` specialisation above - same tool, compute-only here since
+    # modesetting is off. `sudo blackwell-egpu set 3` before `nvidia-smi`.
+    programs.blackwellEgpuManager.enable = true;
   };
 }
