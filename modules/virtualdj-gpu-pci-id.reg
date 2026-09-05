@@ -1,0 +1,17 @@
+REGEDIT4
+
+; wined3d's GL card database does not recognise the eGPU's renderer string
+; ("NVIDIA GeForce RTX 5060 Ti/PCIe/SSE2"), so DXGI falls back to its oldest
+; NVIDIA entry and reports a GeForce GTX 470 from 2010 -- which is what
+; VirtualDJ shows in its "Stems GPU" dropdown, and what it gates the GPU stem
+; engine on. Claiming an RTX 4060 Ti 16GB (the newest 16 GB NVIDIA card in
+; Wine's table) keeps that gate open.
+;
+; This only changes the *identity* wined3d reports. It does not select a GPU:
+; win32u's display devices already name the real RTX 5060 Ti, and vkd3d binds
+; whatever physical device the Vulkan loader offers it. Wine 11 has no
+; VideoDescription knob -- the name is looked up from the PCI ID.
+
+[HKEY_CURRENT_USER\Software\Wine\Direct3D]
+"VideoPciVendorID"=dword:000010de
+"VideoPciDeviceID"=dword:00002805
