@@ -49,7 +49,7 @@ let
       #
       # Only these four channels' fixmes are silenced, so every other fixme,
       # err and warn still shows.
-      export WINEDEBUG=fixme-dxgi,fixme-d2d,fixme-win,fixme-vkd3d
+      export WINEDEBUG=fixme-dxgi,fixme-d2d,fixme-win,fixme-vkd3d,fixme-crypt
 
       # Split the two graphics APIs across the two GPUs. VirtualDJ's skin is
       # D3D11, which wined3d draws through OpenGL; its GPU stem separation is
