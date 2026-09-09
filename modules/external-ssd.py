@@ -1,17 +1,37 @@
-"""Unlock and mount the VeraCrypt volume on the USB SSD, as a plain user.
+"""Unlock, mount, unmount and report on the VeraCrypt volume on the USB SSD.
 
-Nothing here is privileged: udisksd does the device-mapper and mount work and
-polkit lets us ask for it, so there is no sudo, no setuid binary and no entry
-in /etc/crypttab.  See external-ssd.nix for why that authorisation holds.
+This is a thin client. udisksd, contacted over the system D-Bus, does the
+device-mapper and mount work; polkit lets us ask for it without sudo. See
+external-ssd.nix for how that authorisation is arranged, and for how the drive
+gets recognised as a VeraCrypt volume in the first place.
 
-The passphrase is read from the running KeePassXC over the Secret Service API.
-It lives in this process's memory and in the D-Bus message to udisksd, and
-nowhere else -- in particular not in argv (which any local process can read
-out of /proc) and not on this machine's unencrypted root filesystem.
+Commands:
+  mount   unlock the volume if locked, then mount it
+  umount  unmount the volume and lock it
+  status  report whether it is attached / unlocked / mounted
+
+Only `mount` needs the passphrase, and it is read exactly once: from the
+systemd credential at $CREDENTIALS_DIRECTORY/<CRED_NAME> that
+external-ssd.service is started with. Run `mount` from a shell -- no such
+credential in the environment -- and it simply starts that unit and mirrors
+its exit status. `umount` and `status` touch no secret and act directly, so
+they work from anywhere, as the user.
+
+Quirks this works around:
+  * After an unclean unplug udisksd holds on to stale mount state, so Mount
+    can answer AlreadyMounted and Unmount NotMounted; both just mean the
+    volume is already in the state we asked for.
+  * Deriving a VeraCrypt header key is deliberately slow and cryptsetup tries
+    every PRF before rejecting a wrong passphrase, so the D-Bus call timeouts
+    are set well above dbus-python's 25 s default.
+  * udisksd needs a moment after Unlock to probe the new device and export a
+    Filesystem interface, so mount polls for it briefly.
+
+The @NAME@ tokens are substituted by external-ssd.nix at build time.
 """
 
 import argparse
-import getpass
+import os
 import subprocess
 import sys
 import time
@@ -19,41 +39,28 @@ import time
 import dbus
 
 DEVICE = "@device@"
-SECRET_TOOL = "@secretTool@"  # noqa: E501 -- a store path once substituted
-SECRET_ATTR = "@secretAttr@"
-SECRET_VALUE = "@secretValue@"
+CRED_NAME = "@credName@"
+MOUNT_UNIT = "@mountUnit@"
+SYSTEMCTL = "@systemctl@"  # noqa: E501 -- a store path once substituted
+JOURNALCTL = "@journalctl@"  # noqa: E501 -- a store path once substituted
 
 BUS_NAME = "org.freedesktop.UDisks2"
-SECRET_SERVICE = "org.freedesktop.secrets"
 MANAGER_PATH = "/org/freedesktop/UDisks2/Manager"
 IFACE_MANAGER = "org.freedesktop.UDisks2.Manager"
 IFACE_ENCRYPTED = "org.freedesktop.UDisks2.Encrypted"
 IFACE_FILESYSTEM = "org.freedesktop.UDisks2.Filesystem"
 IFACE_PROPS = "org.freedesktop.DBus.Properties"
 
-# udisksd's own bookkeeping can disagree with the MountPoints property it
-# publishes: unplugging a mounted volume leaves the daemon still holding a
-# mount that the property no longer reports. Both of these mean the state we
-# were asked for is already the state we have.
+# Stale-state replies from udisksd; both mean "already as requested".
 ERROR_ALREADY_MOUNTED = "org.freedesktop.UDisks2.Error.AlreadyMounted"
 ERROR_NOT_MOUNTED = "org.freedesktop.UDisks2.Error.NotMounted"
 
-# Deriving a VeraCrypt header key is deliberately slow, and cryptsetup has to
-# try each PRF in turn until one produces a valid header, so a wrong-passphrase
-# attempt is the slowest of all.  dbus-python's 25 s default would time out
-# long before udisksd is done.
+# D-Bus call timeouts, in seconds; unlock is slow, see the module docstring.
 UNLOCK_TIMEOUT = 600
 MOUNT_TIMEOUT = 120
 
-# How long to wait for udev to probe the freshly unlocked device and for
-# udisksd to export a Filesystem interface for it.
+# Seconds to wait for the Filesystem interface to appear after Unlock.
 PROBE_TIMEOUT = 15
-
-# How long to wait for KeePassXC to claim the Secret Service.  Logging in with
-# the drive already attached starts us from the user manager before KeePassXC
-# has autostarted, and losing that race would mean failing on a drive we could
-# have mounted a second later.
-SECRET_SERVICE_TIMEOUT = 60
 
 
 def fail(message):
@@ -102,6 +109,7 @@ def mount_points(bus, path):
 
 
 def await_filesystem(bus, path):
+    """Wait for PATH to expose a filesystem; fail after PROBE_TIMEOUT."""
     deadline = time.monotonic() + PROBE_TIMEOUT
     while True:
         points = mount_points(bus, path)
@@ -116,43 +124,25 @@ def await_filesystem(bus, path):
         time.sleep(0.25)
 
 
-def secret_service_ready(wait):
-    """Whether KeePassXC is on the session bus, optionally waiting for it."""
-    try:
-        bus = dbus.SessionBus()
-    except dbus.DBusException:
-        return False
-    deadline = time.monotonic() + (SECRET_SERVICE_TIMEOUT if wait else 0)
-    while True:
-        if bus.name_has_owner(SECRET_SERVICE):
-            return True
-        if time.monotonic() > deadline:
-            return False
-        time.sleep(0.5)
-
-
 def passphrase():
-    """From KeePassXC if it will give it to us, from the terminal if not."""
-    if secret_service_ready(wait=not sys.stdin.isatty()):
-        # A locked database is fine: libsecret asks the Secret Service to
-        # unlock the item, which is KeePassXC's own master password prompt.
-        lookup = subprocess.run(
-            [SECRET_TOOL, "lookup", SECRET_ATTR, SECRET_VALUE],
-            stdout=subprocess.PIPE,
-            check=False,
-        )
-        # secret-tool writes the secret verbatim, adding a newline only when
-        # its stdout is a terminal -- which here it never is.
-        if lookup.returncode == 0 and lookup.stdout:
-            return lookup.stdout.decode()
-    if sys.stdin.isatty():
-        return getpass.getpass("VeraCrypt passphrase: ")
-    fail(
-        "no secret for " + SECRET_ATTR + "=" + SECRET_VALUE + " from "
-        "KeePassXC (not running, entry outside a group exposed through "
-        "Secret Service Integration, or access denied) and there is no "
-        "terminal to ask on"
-    )
+    """Read the passphrase from this unit's systemd credential."""
+    with open(os.path.join(os.environ["CREDENTIALS_DIRECTORY"],
+                           CRED_NAME), "rb") as handle:
+        secret = handle.read()
+    if not secret:
+        fail("the passphrase credential is empty -- is /etc/external-ssd.key "
+             "set, with no trailing newline?")
+    return secret.decode()
+
+
+def start_mount_unit():
+    """Start MOUNT_UNIT (the only context with the passphrase) and exit."""
+    # `start` on a Type=oneshot blocks until ExecStart finishes.
+    started = subprocess.run([SYSTEMCTL, "start", MOUNT_UNIT])
+    if started.returncode != 0:
+        subprocess.run([JOURNALCTL, "--no-pager", "-b", "-n", "15",
+                        "-u", MOUNT_UNIT])
+    raise SystemExit(started.returncode)
 
 
 def cmd_mount(bus, block):
@@ -220,12 +210,14 @@ def main():
     parser.add_argument("command", choices=sorted(COMMANDS))
     args = parser.parse_args()
 
+    # `mount` from a shell has no credential; hand off to the unit instead.
+    if args.command == "mount" and "CREDENTIALS_DIRECTORY" not in os.environ:
+        start_mount_unit()
+
     bus = dbus.SystemBus()
     block = resolve_block(bus)
     if block is None:
-        # An absent drive is already the state umount is asked to reach, and
-        # suspending without it plugged in should not leave a failed unit
-        # behind. Only mount has nothing to work with.
+        # No drive: umount and status are already satisfied, only mount is not.
         if args.command == "mount":
             fail(DEVICE + " is not attached")
         print("not attached")

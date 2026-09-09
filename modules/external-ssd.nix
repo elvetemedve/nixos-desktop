@@ -1,121 +1,158 @@
-# Mounts the VeraCrypt-encrypted USB SSD without root, and without the
-# passphrase ever sitting on this machine's unencrypted root filesystem.
+# Mounts the VeraCrypt-encrypted USB SSD on plug-in, without sudo and without
+# the passphrase ever being readable by anything but the one unit that unlocks
+# the drive.
 #
-# Plugging the drive in is the whole interaction: a udev rule starts
-# external-ssd.service in the *user's* systemd manager, which reads the
-# passphrase out of the running KeePassXC and hands it to udisks2 over D-Bus.
-# `external-ssd mount|umount|status` does the same thing by hand.
+# The chain, when the disk appears: a udev rule pulls external-ssd-attach.service
+# into the *user* manager; that shim runs `systemctl start external-ssd.service`;
+# external-ssd.service -- a *system* unit, running as the user -- runs
+# `external-ssd mount`, which drives udisksd over the system D-Bus.
+# `external-ssd mount|umount|status` reaches the same system unit by hand.
 #
-# Why none of this needs sudo, a setuid binary or an /etc/crypttab entry:
+# Two units, because udev's SYSTEMD_USER_WANTS can only name a user unit while
+# the real work must run in a system unit (see the passphrase, below). Routing
+# the trigger through the user manager is also what we want: it fires only once
+# someone is logged in, and fires again at login for a drive left attached.
 #
-#   * udisks2 can open VeraCrypt (TCRYPT) volumes itself, but only when
-#     /etc/udisks2/tcrypt.conf exists. udisksd tests for that file once at
-#     startup and never reads it (src/main.c), so an empty file is the whole
-#     switch. With it on, every block device libblkid cannot identify gets a
-#     chi-square test for randomness, and the ones that look like ciphertext
-#     get an org.freedesktop.UDisks2.Encrypted interface. This drive is a
-#     whole-disk volume -- no partition table, no filesystem signature -- so
-#     that probe is the only reason it is recognisable as encrypted at all,
-#     in GNOME Files and Disks as much as here.
+# The passphrase lives in /etc/external-ssd.key, mode 0400 root:root -- in the
+# clear, kept out of this tree, and safe at rest only because / is on an Opal
+# self-encrypting drive. Nothing unprivileged can read it: not another user, and
+# not another process of this user. external-ssd.service is a system unit so
+# PID 1 can read it as root; LoadCredential= drops a copy in the unit's
+# $CREDENTIALS_DIRECTORY and PrivateMounts= keeps that tmpfs in the unit's own
+# mount namespace, so even this user's other processes cannot see the cleartext
+# while the oneshot runs. A user-manager unit could not manage this: it runs as
+# the user, so it could neither read a root-only file nor hold a secret the
+# user's other processes could not also read.
 #
-#   * The polkit actions udisksd then checks, encrypted-unlock and
-#     filesystem-mount, are allow_active=yes by default. They are the ones
-#     that apply because the drive's HintSystem is false (USB, hot-pluggable),
-#     and "active" holds for a systemd user unit too: polkit falls back to the
-#     user's display session when the calling process has no session of its
-#     own. So the daemon does the privileged work and we are simply allowed to
-#     ask for it, with no authentication prompt.
+# Why none of it needs sudo or an auth prompt:
 #
-#   * KeePassXC already serves the Secret Service API (FdoSecrets, see
-#     home/secret.nix), which is what makes fetching the passphrase possible
-#     without storing a copy of it anywhere.
+#   * udisksd does the privileged device-mapper and mount work; we only ask.
 #
-# The one part that cannot be declared here: the KeePassXC entry needs the
-# custom attribute named below, and has to live in a group that is exposed
-# under Settings -> Secret Service Integration.
-{ pkgs, username, ... }:
+#   * udisksd opens VeraCrypt (TCRYPT) volumes itself, but only when
+#     /etc/udisks2/tcrypt.conf exists. It tests for that file once at startup
+#     and never reads it (src/main.c), so an empty file is the whole switch.
+#     This drive is a whole-disk volume with no partition table or filesystem
+#     signature, so udisksd's randomness probe is the only reason it registers
+#     as encrypted at all -- here and in GNOME Disks alike.
+#
+#   * A logged-in user may run encrypted-unlock and filesystem-mount (both
+#     allow_active=yes), but external-ssd.service has no login session of its
+#     own and polkit will not lend it the user's: a system unit's slice is
+#     root-owned, so the uid fallback that covers a user-manager unit does not
+#     apply. The polkit rule below therefore grants the user those two actions
+#     outright, alongside permission to start the unit.
+#
+# Caveats:
+#
+#   * udisksd only checks for tcrypt.conf at startup, and switch-to-configuration
+#     will not restart it for a new /etc file, so the first activation needs a
+#     manual `systemctl restart udisks2` (or a reboot). A restartTrigger would
+#     mean naming udisks2.service under systemd.services, which replaces the
+#     manager's PATH -- where udisksd finds mkfs, fsck and the mount helpers.
+#
+#   * external-ssd-lock unmounts and locks before sleep.target, so a suspended
+#     laptop never holds the volume key in kernel memory. It is a system unit
+#     (the user manager has no sleep.target) that runs as the user, since
+#     udisksd waives authorisation for the uid that mounted the volume.
+#
+#   * GNOME's automounter would otherwise race us to the unlock and pop its
+#     own TCRYPT passphrase dialog, so the udev rule sets UDISKS_AUTO=0 on the
+#     disk -- udisks2 still manages it, GNOME just stops auto-acting on it.
+#
+# Bootstrap, once per machine, as root -- the file must have no trailing
+# newline (secret-tool and install both give that):
+#
+#   secret-tool lookup veracrypt usb-2tb \
+#     | sudo install -m 0400 -o root -g root /dev/stdin /etc/external-ssd.key
+#
+{ config, pkgs, username, ... }:
 
 let
-  # The SSD's own serial, not the enclosure's -- ID_USB_SERIAL_SHORT is a
-  # generic 012345678952 that any other case of this make would also report.
+  # The SSD's own serial; the enclosure's is generic to the product line.
   serial = "CT2000P310SSD8_25375323F879";
   device = "/dev/disk/by-id/ata-${serial}";
 
-  # Attribute pair identifying the KeePassXC entry holding the passphrase.
-  # An attribute rather than the title, so renaming the entry cannot break
-  # this and no other entry can match by accident.
-  secretAttr = "veracrypt";
-  secretValue = "usb-2tb";
+  # Root-only passphrase file, and the credential name it is exposed under.
+  secretFile = "/etc/external-ssd.key";
+  credName = "veracrypt-passphrase";
 
+  # The system unit that holds the credential and does the unlock + mount.
+  mountUnit = "external-ssd.service";
+
+  # Bake the config into the script; it carries none of its own.
   external-ssd = pkgs.writers.writePython3Bin "external-ssd"
     {
       libraries = [ pkgs.python3Packages.dbus-python ];
     }
     (builtins.replaceStrings
-      [ "@device@" "@secretTool@" "@secretAttr@" "@secretValue@" ]
-      [ device "${pkgs.libsecret}/bin/secret-tool" secretAttr secretValue ]
+      [ "@device@" "@credName@" "@mountUnit@" "@systemctl@" "@journalctl@" ]
+      [
+        device
+        credName
+        mountUnit
+        "${pkgs.systemd}/bin/systemctl"
+        "${pkgs.systemd}/bin/journalctl"
+      ]
       (builtins.readFile ./external-ssd.py));
 in
 {
-  # libsecret for `secret-tool lookup ${secretAttr} ${secretValue}`, which is
-  # the quickest way to check the KeePassXC half in isolation.
-  environment.systemPackages = [ external-ssd pkgs.libsecret ];
+  environment.systemPackages = [ external-ssd ];
 
-  # Contents are irrelevant; existence is the flag. services.udisks2.settings
-  # merges with its defaults, so udisks2.conf is left alone.
+  # Existence is the switch; contents merge with the udisks2 defaults.
   services.udisks2.settings."tcrypt.conf" = { };
 
-  # udisksd only tests for that file while starting up, and a change under
-  # /etc is not by itself a reason for switch-to-configuration to restart a
-  # unit, so the first activation needs a `systemctl restart udisks2` (or a
-  # reboot) by hand. Tempting to hang a restartTrigger off the unit, but
-  # udisks2.service comes from the package rather than from systemd.services:
-  # naming it there gets it NixOS's default service environment, whose PATH
-  # is coreutils/findutils/gnugrep/gnused/systemd -- replacing the manager's
-  # PATH, which is where udisksd finds mkfs, fsck and the mount helpers.
-
-  # services.udev.extraRules is types.lines, so this merges with the rules
-  # defined elsewhere rather than replacing them.
-  services.udev.extraRules = ''
-    # The VeraCrypt USB SSD: unlock and mount it in the user's session on
-    # attach. systemd's own rules already tag block devices with "systemd";
-    # SYSTEMD_USER_WANTS is what makes the user manager pull the unit in
-    # rather than PID 1, which is what keeps this unprivileged.
-    ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", \
-      ENV{ID_SERIAL}=="${serial}", \
-      ENV{SYSTEMD_USER_WANTS}+="external-ssd.service"
+  # Let the user start the mount unit, and let the (session-less) unit unlock
+  # and mount -- the two udisks2 actions a logged-in user already has via
+  # allow_active. All ${username}-only.
+  security.polkit.extraConfig = ''
+    polkit.addRule(function(action, subject) {
+      if (subject.user != "${username}") { return; }
+      if (action.id == "org.freedesktop.systemd1.manage-units" &&
+          action.lookup("unit") == "${mountUnit}") {
+        return polkit.Result.YES;
+      }
+      if (action.id == "org.freedesktop.udisks2.encrypted-unlock" ||
+          action.id == "org.freedesktop.udisks2.filesystem-mount") {
+        return polkit.Result.YES;
+      }
+    });
   '';
 
-  systemd.user.services.external-ssd = {
-    description = "Unlock and mount the VeraCrypt USB volume";
+  # On attach: mark the disk UDISKS_AUTO=0 so GNOME's automounter leaves the
+  # locked volume alone (the unlock prompt is our job, not its), and pull the
+  # shim into the user manager. types.lines, so this merges with other rules.
+  services.udev.extraRules = ''
+    ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", \
+      ENV{ID_SERIAL}=="${serial}", \
+      ENV{UDISKS_AUTO}="0", \
+      ENV{SYSTEMD_USER_WANTS}+="external-ssd-attach.service"
+  '';
 
-    # Deliberately not wantedBy anything: the udev rule above is the only
-    # thing that starts it. That covers logging in with the drive already
-    # attached too, since the user manager applies SYSTEMD_USER_WANTS when it
-    # enumerates devices at startup -- `external-ssd mount` is idempotent, so a
-    # repeated trigger just reports the existing mount point.
+  # Started only by the udev rule; starts the worker (--no-block: slow unlock).
+  systemd.user.services.external-ssd-attach = {
+    description = "Start the VeraCrypt USB mount on attach or login";
     serviceConfig = {
       Type = "oneshot";
-      ExecStart = "${external-ssd}/bin/external-ssd mount";
-
-      # Long enough to sit through a KeePassXC master password prompt: at
-      # login this can start before KeePassXC has autostarted, and the secret
-      # lookup then waits for it and unlocks the database on demand.
-      TimeoutStartSec = "10min";
+      ExecStart =
+        "${pkgs.systemd}/bin/systemctl start --no-block ${mountUnit}";
     };
   };
 
-  # Unmount and lock before suspending, so a sleeping laptop is never carrying
-  # the volume's key in kernel memory. systemd-suspend.service is
-  # After=sleep.target, so Before= plus WantedBy= on that target lands this
-  # ahead of the actual suspend; if it fails, Wants= is weak enough that the
-  # machine still goes to sleep.
-  #
-  # A system unit, because the user manager has no sleep.target -- but running
-  # as the user rather than as root, because udisks2 skips authorisation
-  # altogether when the caller is the uid that mounted and unlocked the device
-  # (uid 0 is exempt as well, but nothing here needs to reach for that). The
-  # session bus is not involved: locking never touches KeePassXC.
+  # System unit for LoadCredential; runs as the user for the mount path.
+  systemd.services.external-ssd = {
+    description = "Unlock and mount the VeraCrypt USB volume";
+    serviceConfig = {
+      Type = "oneshot";
+      User = username;
+      ExecStart = "${external-ssd}/bin/external-ssd mount";
+      LoadCredential = "${credName}:${secretFile}";
+      PrivateMounts = true;
+      # Above the script's 600 s unlock timeout, so systemd does not kill first.
+      TimeoutStartSec = "15min";
+    };
+  };
+
+  # Unmount and lock before sleep; rationale in the header.
   systemd.services.external-ssd-lock = {
     description = "Lock the VeraCrypt USB volume before sleep";
     before = [ "sleep.target" ];
