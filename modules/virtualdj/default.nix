@@ -20,7 +20,7 @@ let
       export WINEPREFIX=${prefix}
 
       # The database, playlists, mappers and settings live on the external
-      # SSD (D:\VirtualDJ, pinned by virtualdj-homefolder.reg). With the SSD
+      # SSD (D:\VirtualDJ, pinned by homefolder.reg). With the SSD
       # missing VirtualDJ does not stop -- it falls back to a real and
       # populated internal copy under C:, so the session looks completely
       # normal while every edit lands somewhere that vanishes from view the
@@ -155,15 +155,15 @@ Start VirtualDJ anyway?"; then
       # name that the fullpath .reg corrects, and creates the ASIO list that
       # the FLX10 alias joins. Idempotent: re-importing the same values is a
       # no-op.
-      "${wineVdj}/bin/wine" regedit /S ${./virtualdj-pipeasio-as-ddj-flx10.reg}
-      "${wineVdj}/bin/wine" regedit /S ${./virtualdj-pipeasio-fullpath-clsid.reg}
-      "${wineVdj}/bin/wine" regedit /S ${./virtualdj-hidpi.reg}
+      "${wineVdj}/bin/wine" regedit /S ${./pipeasio-as-ddj-flx10.reg}
+      "${wineVdj}/bin/wine" regedit /S ${./pipeasio-fullpath-clsid.reg}
+      "${wineVdj}/bin/wine" regedit /S ${./hidpi.reg}
 
       # Stops full-screen mode from jumping to the TV. Turns off Wine's
       # XRandR handler so it never sends mutter a Xinerama monitor index
       # that mutter mistranslates under HiDPI; see the comments in the .reg
       # itself for the whole chain and what it costs.
-      "${wineVdj}/bin/wine" regedit /S ${./virtualdj-fullscreen-monitor.reg}
+      "${wineVdj}/bin/wine" regedit /S ${./fullscreen-monitor.reg}
 
       # Re-pins the data directory to the external SSD. VirtualDJ rewrites
       # this key to its C: default whenever the SSD is missing, and never
@@ -171,11 +171,11 @@ Start VirtualDJ anyway?"; then
       # every later run reading the stale internal copy. Must stay ahead of
       # the exec below: it only works because it lands before virtualdj.exe
       # reads the key.
-      "${wineVdj}/bin/wine" regedit /S ${./virtualdj-homefolder.reg}
+      "${wineVdj}/bin/wine" regedit /S ${./homefolder.reg}
 
       # Makes DXGI report a card VirtualDJ will enable GPU stems on; see the
       # comments in the .reg itself.
-      "${wineVdj}/bin/wine" regedit /S ${./virtualdj-gpu-pci-id.reg}
+      "${wineVdj}/bin/wine" regedit /S ${./gpu-pci-id.reg}
 
       exec "${wineVdj}/bin/wine" 'C:\Program Files\VirtualDJ\virtualdj.exe' "$@"
     '';
