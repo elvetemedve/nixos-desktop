@@ -1,0 +1,64 @@
+Windows Registry Editor Version 5.00
+
+; Keeps VirtualDJ's full-screen mode on the screen it was already on,
+; instead of jumping to the external TV.
+;
+; The window control in the header cycles windowed -> maximized ->
+; full screen. On the last step VirtualDJ does everything right: it calls
+; MonitorFromWindow, gets the laptop panel, and asks for that monitor's
+; rect. Wine also does the right thing -- it sets _NET_WM_STATE_FULLSCREEN
+; and then names the target output for the WM in _NET_WM_FULLSCREEN_MONITORS,
+; using Xinerama monitor indices (0 = eDP-1, the laptop).
+;
+; mutter is what gets it wrong. meta_x11_display_ensure_xinerama_indices()
+; matches XineramaQueryScreens() rects against its own logical monitor
+; rects by *exact equality*. Both screens here run at scale 2, so mutter's
+; logical rects (eDP-1 0,0 1920x1200; HDMI-2 1920,0 2048x1080) can never
+; equal XWayland's device-pixel Xinerama rects (0,0 3840x2400 and
+; 3840,0 4096x2160). No logical monitor is ever assigned an index, so they
+; all keep the g_new0 default of 0, and index 0 resolves to whichever
+; monitor is *first* in the list -- which in this layout is the TV.
+; (Wine then observes the move and re-sends index 1, which matches nothing,
+; so mutter clears the property entirely. That is why a full-screen
+; VirtualDJ window has no _NET_WM_FULLSCREEN_MONITORS on it at all.)
+; This is an upstream mutter bug, still present in main; it needs both
+; HiDPI scaling and two monitors to show up.
+;
+; UseXRandR=N is the lever that avoids it without patching anything.
+; It makes X11DRV_XRandR_Init() bail out early, so Wine keeps the
+; "Xinerama" display-device handler (priority 100) that xinerama_init()
+; already registered instead of "XRandR 1.4" (priority 200). That handler
+; still enumerates BOTH monitors correctly -- it reads the same
+; XineramaQueryScreens data -- but its register_event_handlers is NULL, so
+; X11DRV_DisplayDevices_SupportEventHandlers() returns FALSE and
+; update_net_wm_fullscreen_monitors() returns before sending anything.
+; With no index for mutter to mistranslate, mutter picks the full-screen
+; output from the window's actual geometry: the laptop when it is on the
+; laptop, and the TV if the window is moved there first.
+;
+; Two things are given up, neither of which VirtualDJ uses:
+;   - Display hotplug detection. Wine no longer receives XRandR events, so
+;     plugging or unplugging the TV mid-session is not noticed until
+;     VirtualDJ restarts.
+;   - Mode setting. Display settings fall back to NoRes/XF86VidMode, so
+;     ChangeDisplaySettings cannot change resolution. VirtualDJ uses
+;     windowed full screen, not an exclusive mode, so this does not bite.
+;
+; Verified 2026-09-09: with this set, the trace shows
+;   requesting _NET_WM_STATE 0x2
+;   requesting config (0,0)-(3840,2400)
+; and no _NET_WM_FULLSCREEN_MONITORS at all, and the window goes full
+; screen on the laptop across repeated cycles.
+;
+; Do NOT try to fix this by switching Wine to winewayland.drv
+; (HKCU\Software\Wine\Drivers "Graphics"="wayland"). It does remove the
+; faulty path -- the Wayland driver names outputs by connector, so there is
+; no index to mistranslate -- and the UI renders at the correct size, but
+; VirtualDJ livelocks within a minute: the main thread keeps wined3d's
+; command-stream critical section while mutter re-sends
+; xdg_toplevel_handle_configure with climbing serials, and the UI stops
+; responding at ~80% CPU ("wait timed out in thread NNNN, blocked by NNNN"
+; against dlls/wined3d/wined3d_main.c: wined3d_cs). Tested 2026-09-09 on
+; wine 11.17.
+[HKEY_CURRENT_USER\Software\Wine\X11 Driver]
+"UseXRandR"="N"

@@ -100,6 +100,12 @@ let
       "${wineVdj}/bin/wine" regedit /S ${./virtualdj-pipeasio-fullpath-clsid.reg}
       "${wineVdj}/bin/wine" regedit /S ${./virtualdj-hidpi.reg}
 
+      # Stops full-screen mode from jumping to the TV. Turns off Wine's
+      # XRandR handler so it never sends mutter a Xinerama monitor index
+      # that mutter mistranslates under HiDPI; see the comments in the .reg
+      # itself for the whole chain and what it costs.
+      "${wineVdj}/bin/wine" regedit /S ${./virtualdj-fullscreen-monitor.reg}
+
       # Makes DXGI report a card VirtualDJ will enable GPU stems on; see the
       # comments in the .reg itself.
       "${wineVdj}/bin/wine" regedit /S ${./virtualdj-gpu-pci-id.reg}
