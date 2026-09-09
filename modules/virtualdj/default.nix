@@ -201,11 +201,34 @@ Start VirtualDJ anyway?"; then
     '';
   };
 
+  # VirtualDJ's own icon, as winemenubuilder extracted it from virtualdj.exe
+  # when the MSI ran. Carried here rather than pointed at in
+  # ~/.local/share/icons, because that copy is user state: it is named after
+  # a hash (0AAF_virtualdj.0) that winemenubuilder regenerates, so it does
+  # not survive reinstalling VirtualDJ or rebuilding the prefix -- which is
+  # exactly when the entry must not quietly lose its icon.
+  #
+  # Installed into hicolor rather than named by absolute path, so the shell
+  # picks the size it wants; all four the .exe carries are here.
+  virtualdjIcon = pkgs.runCommand "virtualdj-icon" { } ''
+    install -Dm444 ${./icons/16x16.png}   $out/share/icons/hicolor/16x16/apps/virtualdj.png
+    install -Dm444 ${./icons/32x32.png}   $out/share/icons/hicolor/32x32/apps/virtualdj.png
+    install -Dm444 ${./icons/48x48.png}   $out/share/icons/hicolor/48x48/apps/virtualdj.png
+    install -Dm444 ${./icons/256x256.png} $out/share/icons/hicolor/256x256/apps/virtualdj.png
+  '';
+
   desktopItem = pkgs.makeDesktopItem {
     name = "virtualdj";
     desktopName = "VirtualDJ";
     exec = "${virtualdj}/bin/virtualdj";
+    icon = "virtualdj";
     categories = [ "AudioVideo" "Audio" ];
+
+    # WM_CLASS on the main window is virtualdj.exe, for both instance and
+    # class. Without this the shell cannot tie the running window back to
+    # this entry, and shows a second, generic tile next to the launcher
+    # instead of marking this one as running.
+    startupWMClass = "virtualdj.exe";
   };
 in
 {
@@ -222,5 +245,5 @@ in
   # U+25C4/U+25BA as .notdef boxes.
   fonts.packages = [ pkgs.corefonts ];
 
-  environment.systemPackages = [ virtualdj virtualdj-regedit desktopItem ];
+  environment.systemPackages = [ virtualdj virtualdj-regedit desktopItem virtualdjIcon ];
 }
