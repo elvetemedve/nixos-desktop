@@ -71,6 +71,17 @@ in
     systemd.tmpfiles.rules = [
       "L+ /usr/local/bin/blackwell-egpu - - - - ${package}/bin/blackwell-egpu"
       "L+ /home/${username}/.local/share/gnome-shell/extensions/${extensionUuid} - - - - ${package}/share/gnome-shell/extensions/${extensionUuid}"
+
+      # Wipe the tool's state cache on every boot. It lives in /tmp
+      # (CACHE_DIR="/tmp/blackwell_egpu" in the script) and NixOS doesn't clean
+      # /tmp on boot, so a stale mode file survives reboots. The script's `set`
+      # handler only runs the real work when the cached mode is *below* the
+      # target, so after a reboot the file still reads "3" from the last session
+      # and `sudo blackwell-egpu set 3` exits having done nothing - no
+      # /tmp/egpu_allow, no PCI rescan, no `modprobe nvidia`. `R!` removes the
+      # dir at boot only (skipped during runtime tmpfiles cleanup), forcing the
+      # script's first-run init to re-detect the live Thunderbolt state.
+      "R! /tmp/blackwell_egpu - - - - -"
     ];
 
     # The GNOME extension always invokes `sudo /usr/local/bin/blackwell-egpu ...`.
