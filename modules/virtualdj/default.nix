@@ -159,10 +159,11 @@ Start VirtualDJ anyway?"; then
       "${wineVdj}/bin/wine" regedit /S ${./pipeasio-fullpath-clsid.reg}
       "${wineVdj}/bin/wine" regedit /S ${./hidpi.reg}
 
-      # Stops full-screen mode from jumping to the TV. Turns off Wine's
-      # XRandR handler so it never sends mutter a Xinerama monitor index
-      # that mutter mistranslates under HiDPI; see the comments in the .reg
-      # itself for the whole chain and what it costs.
+      # Clears the old "UseXRandR"="N" that used to live here. It stopped
+      # full-screen mode jumping to the TV only by making Wine blind to the
+      # TV altogether, which cost the visualisation window its output. What
+      # actually keeps full screen on the laptop is the <logicalmonitor>
+      # order in ~/.config/monitors.xml; see the comments in the .reg itself.
       "${wineVdj}/bin/wine" regedit /S ${./fullscreen-monitor.reg}
 
       # Re-pins the data directory to the external SSD. VirtualDJ rewrites
