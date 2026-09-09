@@ -10,8 +10,67 @@ let
 
   virtualdj = pkgs.writeShellApplication {
     name = "virtualdj";
+
+    # For the missing-SSD prompt below. The desktop entry is the usual way
+    # in and it has no terminal, so the graphical prompt is not a fallback
+    # here -- it is the path that normally runs.
+    runtimeInputs = [ pkgs.zenity ];
+
     text = ''
       export WINEPREFIX=${prefix}
+
+      # The database, playlists, mappers and settings live on the external
+      # SSD (D:\VirtualDJ, pinned by virtualdj-homefolder.reg). With the SSD
+      # missing VirtualDJ does not stop -- it falls back to a real and
+      # populated internal copy under C:, so the session looks completely
+      # normal while every edit lands somewhere that vanishes from view the
+      # moment the SSD is back. That is the failure worth guarding: not a
+      # crash, but a silent success against the wrong database.
+      #
+      # This sits ahead of `wineserver -k` and the .reg imports on purpose --
+      # declining must leave the prefix, and any wineserver already serving
+      # it, untouched.
+      #
+      # Tested through dosdevices rather than the mount path, so the guard
+      # follows the drive mapping instead of duplicating it.
+      #
+      # Two prompts, because there are two ways in: a terminal, and the
+      # desktop entry, which has no stdin to read. With neither a TTY nor a
+      # display there is nobody to ask, and an unattended start is exactly
+      # the case that must not quietly use the wrong database -- so refuse.
+      homeFolder="${prefix}/dosdevices/d:/VirtualDJ"
+      if [ ! -d "$homeFolder" ]; then
+        warning="The external SSD is not attached.
+
+VirtualDJ will fall back to its internal database on C:. Tracks, playlists
+and settings you change will be written there, will not reach the SSD, and
+will not be there the next time you start with it attached."
+
+        if [ -t 0 ]; then
+          printf '%s\n\n' "$warning" >&2
+          read -r -p "Start VirtualDJ anyway? [y/N] " reply || reply=""
+          case "$reply" in
+            [yY] | [yY][eE][sS]) ;;
+            *)
+              echo "virtualdj: aborted; external SSD not attached." >&2
+              exit 1
+              ;;
+          esac
+        elif [ -n "''${WAYLAND_DISPLAY:-}''${DISPLAY:-}" ]; then
+          if ! zenity --question --no-markup --no-wrap --default-cancel \
+                 --title "VirtualDJ" \
+                 --ok-label "Start anyway" --cancel-label "Cancel" \
+                 --text "$warning
+
+Start VirtualDJ anyway?"; then
+            echo "virtualdj: aborted; external SSD not attached." >&2
+            exit 1
+          fi
+        else
+          echo "virtualdj: external SSD not attached, and no terminal or display to ask on; refusing to start." >&2
+          exit 1
+        fi
+      fi
 
       # VirtualDJ queries the DXGI swapchain and draws D2D glyph runs on every
       # frame, and Wine's stubs there are plain FIXMEs rather than FIXME_ONCE,
@@ -105,6 +164,14 @@ let
       # that mutter mistranslates under HiDPI; see the comments in the .reg
       # itself for the whole chain and what it costs.
       "${wineVdj}/bin/wine" regedit /S ${./virtualdj-fullscreen-monitor.reg}
+
+      # Re-pins the data directory to the external SSD. VirtualDJ rewrites
+      # this key to its C: default whenever the SSD is missing, and never
+      # restores it, so without this a single driveless run would leave
+      # every later run reading the stale internal copy. Must stay ahead of
+      # the exec below: it only works because it lands before virtualdj.exe
+      # reads the key.
+      "${wineVdj}/bin/wine" regedit /S ${./virtualdj-homefolder.reg}
 
       # Makes DXGI report a card VirtualDJ will enable GPU stems on; see the
       # comments in the .reg itself.

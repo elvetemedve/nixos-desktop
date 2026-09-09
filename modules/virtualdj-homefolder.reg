@@ -1,0 +1,35 @@
+Windows Registry Editor Version 5.00
+
+; Pins VirtualDJ's data directory ("HomeFolder") to the external SSD, so
+; the song database, playlists, mappers, pads and settings live on D:
+; and travel with the drive instead of sitting in the Wine prefix.
+;
+; D: is dosdevices/d: -> /run/media/geza/ExternalSSD, a udisks automount,
+; so it is simply absent whenever the SSD is not plugged in.
+;
+; The problem this solves is not the missing drive itself -- VirtualDJ
+; handles that, after a fashion, by falling back to its default
+; C:\users\geza\AppData\Local\VirtualDJ. The problem is that it also
+; *writes that fallback back into the registry*, silently discarding the
+; D: setting. Nothing restores it when the drive comes back, so the next
+; run with the SSD attached still reads the stale C: copy, and the real
+; database on D: quietly stops being the one in use.
+;
+; Importing this on every launch makes that self-healing: a driveless
+; session still clobbers the value, but the next launch rewrites
+; D:\VirtualDJ before virtualdj.exe ever reads it. The import is
+; unconditional on purpose -- when the SSD is absent VirtualDJ just
+; overwrites it again, which is no worse than today, and keeping the
+; launcher free of drive-state logic keeps it honest.
+;
+; What this does NOT do: stop a driveless session from running against
+; the stale C: copy. That copy is real and populated, so edits made
+; without the SSD attached land there and are invisible once D: is back.
+; If that ever bites, the fix is a guard in the launcher that refuses to
+; start when D:\VirtualDJ is missing, not a change here.
+;
+; RunFolder64 in this same key is the *install* directory
+; (C:\Program Files\VirtualDJ) and is deliberately left alone -- the
+; program itself is not portable, only its data.
+[HKEY_CURRENT_USER\Software\VirtualDJ]
+"HomeFolder"="D:\\VirtualDJ"
