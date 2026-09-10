@@ -14,7 +14,7 @@
     ];
     profiles."geza" = {
       search = {
-        default = "SearXNG";
+        default = "ddg"; # DuckDuckGo
         engines = {
           "SearXNG" = {
             urls = [{ template = "https://search.elvetemedve.hu/search?q={searchTerms}"; }];
