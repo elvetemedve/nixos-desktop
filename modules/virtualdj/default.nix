@@ -8,13 +8,35 @@ let
   wineVdj = inputs.wine-vdj.packages.${pkgs.stdenv.hostPlatform.system}.default;
   prefix = "/home/${username}/virtualdj";
 
+  # Microsoft's real HLSL compiler, to replace Wine's builtin d3dcompiler_47.
+  #
+  # VirtualDJ compiles its "source only" visuals through D3DCompile on every
+  # load -- 265 of the 720 shaders carry only ShaderToy source, and nothing
+  # anywhere caches the compiled result (not the .vdjshader, not Cache/, not
+  # cache.db) -- so which implementation answers that call decides the code
+  # those shaders actually execute. It really is this DLL that serves them,
+  # even though virtualdj.exe neither imports nor names it: the name is built
+  # at runtime, so no string search finds it. Confirmed with
+  # WINEDEBUG=+loaddll, which shows system32\d3dcompiler_47.dll loaded.
+  #
+  # Same file and pinned hash winetricks' d3dcompiler_47 verb uses: the copy
+  # Mozilla redistributes with fxc2. The URL tracks a branch, so the hash is
+  # what actually pins it -- an upstream change fails the build loudly rather
+  # than silently swapping the compiler underneath the prefix.
+  d3dcompiler47 = pkgs.fetchurl {
+    url = "https://raw.githubusercontent.com/mozilla/fxc2/master/dll/d3dcompiler_47.dll";
+    sha256 = "4432bbd1a390874f3f0a503d45cc48d346abc3a8c0213c289f4b615bf0ee84f3";
+  };
+
   virtualdj = pkgs.writeShellApplication {
     name = "virtualdj";
 
     # For the missing-SSD prompt below. The desktop entry is the usual way
     # in and it has no terminal, so the graphical prompt is not a fallback
     # here -- it is the path that normally runs.
-    runtimeInputs = [ pkgs.zenity ];
+    # coreutils for the `install` that stages d3dcompiler_47; the script runs
+    # under `set -e`, so a missing binary would abort the launch outright.
+    runtimeInputs = [ pkgs.zenity pkgs.coreutils ];
 
     text = ''
       export WINEPREFIX=${prefix}
@@ -158,6 +180,14 @@ Start VirtualDJ anyway?"; then
       "${wineVdj}/bin/wine" regedit /S ${./pipeasio-as-ddj-flx10.reg}
       "${wineVdj}/bin/wine" regedit /S ${./pipeasio-fullpath-clsid.reg}
       "${wineVdj}/bin/wine" regedit /S ${./hidpi.reg}
+
+      # Stage Microsoft's d3dcompiler_47 where the `native` override can find
+      # it, then set that override. install rather than cp so the mode is ours
+      # whatever was there before -- the prefix already had a stale copy of
+      # Wine's own builtin sitting in system32.
+      install -Dm644 ${d3dcompiler47} \
+        "${prefix}/drive_c/windows/system32/d3dcompiler_47.dll"
+      "${wineVdj}/bin/wine" regedit /S ${./d3dcompiler.reg}
 
       # Clears the old "UseXRandR"="N" that used to live here. It stopped
       # full-screen mode jumping to the TV only by making Wine blind to the

@@ -1,0 +1,33 @@
+REGEDIT4
+
+; Use Microsoft's real d3dcompiler_47 instead of Wine's builtin.
+;
+; VirtualDJ compiles every "source only" visual at load time: 265 of the 720
+; shaders in the library ship only shader.json (the ShaderToy source) with no
+; compiled_D11_1.cso, and nothing caches the result -- not the .vdjshader (the
+; files are untouched since the March download despite being played), not
+; Cache/Plugins (store thumbnails only), not cache.db (waveforms only). So the
+; compiler runs on every load and its output is what the GPU executes.
+;
+; It really is this DLL that serves those calls, though virtualdj.exe neither
+; imports nor names it -- the name is built at runtime, so no string search
+; finds it. Proved with WINEDEBUG=+loaddll (`vdj-bench probe`):
+;   Loaded L"C:\\windows\\system32\\d3dcompiler_47.dll" ... : builtin
+;
+; Why it matters: source-only shaders measure a median 10.16x their catalog
+; performance rating, against 3.90x for shaders that ship a prebuilt DXBC
+; (n=277, measured 2026-09-12). Whether that gap is the compiler or simply
+; curated-port-vs-auto-transpile is not settled -- this override is the
+; experiment that answers it.
+;
+; "native,builtin" rather than plain "native" so a DLL that fails to load
+; falls back instead of taking every visual down with it. Check which one
+; actually won with `vdj-bench probe <id>`: the loaddll line says "builtin"
+; or "native".
+;
+; To revert: drop this import and the install line from default.nix, rebuild,
+; and delete the key below by hand (a .reg import never removes what an
+; earlier one wrote -- same caution as fullscreen-monitor.reg).
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"d3dcompiler_47"="native,builtin"
