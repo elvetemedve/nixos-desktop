@@ -274,7 +274,21 @@ in
   # them either, so mirroring them there removes every one of these faces
   # rather than adding them -- leaving VirtualDJ to draw skin glyphs such as
   # U+25C4/U+25BA as .notdef boxes.
-  fonts.packages = [ pkgs.corefonts ];
+  #
+  # Korean text (track titles, tags) falls back to fontconfig's default
+  # sans-serif otherwise, which has no proper Hangul glyphs and renders as
+  # boxes or a bare CJK fallback. Pretendard covers Hangul with a UI-native
+  # look; Noto Sans CJK KR is the broader fallback for anything Pretendard
+  # doesn't cover (Hanja, mixed CJK).
+  #
+  # Use the *-static variant, not noto-fonts-cjk-sans: that one ships a
+  # single variable-font (.otf.ttc with a "wght" axis) per script. Wine's
+  # font engine doesn't instance variable-font weight axes, so it rasterises
+  # the raw default master instead -- which renders visibly thinner than the
+  # static Latin faces sitting next to it. The static package ships one
+  # fixed-weight .ttc per weight (Regular, Bold, ...) that Wine can select
+  # directly.
+  fonts.packages = [ pkgs.corefonts pkgs.pretendard pkgs.noto-fonts-cjk-sans-static ];
 
   environment.systemPackages = [ virtualdj virtualdj-regedit desktopItem virtualdjIcon ];
 }
