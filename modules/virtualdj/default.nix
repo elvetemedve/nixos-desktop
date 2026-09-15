@@ -36,7 +36,9 @@ let
     # here -- it is the path that normally runs.
     # coreutils for the `install` that stages d3dcompiler_47; the script runs
     # under `set -e`, so a missing binary would abort the launch outright.
-    runtimeInputs = [ pkgs.zenity pkgs.coreutils ];
+    # power-profiles-daemon for `powerprofilesctl`, which switches the CPU
+    # into performance mode for the run; see the comment further down.
+    runtimeInputs = [ pkgs.zenity pkgs.coreutils pkgs.power-profiles-daemon ];
 
     text = ''
       export WINEPREFIX=${prefix}
@@ -208,7 +210,20 @@ Start VirtualDJ anyway?"; then
       # comments in the .reg itself.
       "${wineVdj}/bin/wine" regedit /S ${./gpu-pci-id.reg}
 
-      exec "${wineVdj}/bin/wine" 'C:\Program Files\VirtualDJ\virtualdj.exe' "$@"
+      # intel_pstate's HWP lets the CPU idle down between audio callbacks and
+      # only re-ramp on a burst -- loading a track, engaging a shader/effect
+      # -- with enough delay on that ramp to risk an audible underrun.
+      # Performance removes the idle/ramp cycle for the run; restored on exit
+      # via the trap below rather than left sticky, since nothing else about
+      # this launch should outlive it. Non-fatal throughout: a D-Bus hiccup or
+      # the daemon being down must not stop VirtualDJ from starting.
+      previousProfile=$(powerprofilesctl get 2>/dev/null || true)
+      trap '[ -n "$previousProfile" ] && powerprofilesctl set "$previousProfile" >/dev/null 2>&1 || true' EXIT
+      powerprofilesctl set performance >/dev/null 2>&1 || true
+
+      # Not `exec`: the trap above needs this shell to still be here when
+      # VirtualDJ exits, to restore the power profile.
+      "${wineVdj}/bin/wine" 'C:\Program Files\VirtualDJ\virtualdj.exe' "$@"
     '';
   };
 
