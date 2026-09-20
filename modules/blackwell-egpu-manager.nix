@@ -18,7 +18,7 @@ let
 
   package = pkgs.stdenvNoCC.mkDerivation {
     pname = "blackwell-egpu-manager";
-    version = "1.5.4";
+    version = "1.5.6";
     src = inputs.blackwell-egpu-manager;
 
     dontBuild = true;
