@@ -42,17 +42,27 @@ let
     # No glxinfo (mesa-demos): it's only used for one cosmetic device-name
     # label at first run and the script already falls back cleanly without it.
     postFixup = ''
-      wrapProgram "$out/bin/blackwell-egpu" --prefix PATH : ${lib.makeBinPath (with pkgs; [
-        pciutils # lspci, setpci
-        bolt # boltctl
-        kmod # modprobe
-        psmisc # fuser
-        util-linux
-        coreutils
-        gnugrep
-        gnused
-        gawk
-      ])}
+      wrapProgram "$out/bin/blackwell-egpu" --prefix PATH : ${lib.makeBinPath [
+        pkgs.pciutils # lspci, setpci
+        pkgs.bolt # boltctl
+        pkgs.kmod # modprobe
+        pkgs.psmisc # fuser
+        # udevadm (settle/trigger around every bus rescan). Taken from
+        # config.systemd.package rather than pkgs.systemd so it matches the
+        # systemd-udevd actually running - udevadm talks to that daemon.
+        config.systemd.package
+        # pidof, used by the mode-3 guard that spares the compositor when the
+        # script kills everything holding /dev/nvidia*. Upstream only checks
+        # for kwin_wayland/plasmashell, so on GNOME this still kills clients
+        # mutter owns - keep running `set 3` before logging in, or log out and
+        # back in afterwards.
+        pkgs.procps
+        pkgs.util-linux
+        pkgs.coreutils
+        pkgs.gnugrep
+        pkgs.gnused
+        pkgs.gawk
+      ]}
     '';
 
     meta.mainProgram = "blackwell-egpu";

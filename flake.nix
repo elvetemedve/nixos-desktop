@@ -37,7 +37,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     blackwell-egpu-manager = {
-      url = "github:DamianKA1993/blackwell-egpu-manager/v1.5.4";
+      url = "github:DamianKA1993/blackwell-egpu-manager/v1.5.6";
       flake = false;
     };
   };

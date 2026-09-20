@@ -29,7 +29,7 @@ in
   specialisation.egpu.configuration = {
     system.nixos.label = "egpu";
 
-    boot.kernelPackages = pkgs.linuxPackages_7_1;
+    boot.kernelPackages = pkgs.linuxPackages_7_2;
 
     boot.kernelParams = egpuKernelParams;
     boot.extraModprobeConfig = egpuModprobe;
