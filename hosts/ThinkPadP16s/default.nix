@@ -10,6 +10,7 @@
 
     ../../modules/ddj-flx10.nix
     ../../modules/external-ssd.nix
+    ../../modules/qlcplus
     ../../modules/virtualdj
 
     ./hardware-configuration.nix

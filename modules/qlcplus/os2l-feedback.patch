@@ -1,0 +1,263 @@
+diff --git a/engine/src/qlcinputprofile.cpp b/engine/src/qlcinputprofile.cpp
+index 5f9f459..67df4fc 100644
+--- a/engine/src/qlcinputprofile.cpp
++++ b/engine/src/qlcinputprofile.cpp
+@@ -343,6 +343,7 @@ QVariant QLCInputProfile::channelExtraParams(const QLCInputChannel* channel) con
+     switch (m_type)
+     {
+         case OSC: return channel->name();
++        case OS2L: return channel->name();
+         case MIDI: return channel->lowerChannel();
+         default: return QVariant();
+     }
+diff --git a/plugins/os2l/os2lplugin.cpp b/plugins/os2l/os2lplugin.cpp
+index 451300c..d62b7e3 100644
+--- a/plugins/os2l/os2lplugin.cpp
++++ b/plugins/os2l/os2lplugin.cpp
+@@ -133,6 +133,69 @@ quint32 OS2LPlugin::universe() const
+     return m_inputUniverse;
+ }
+ 
++/*************************************************************************
++ * Feedback
++ *************************************************************************/
++
++bool OS2LPlugin::openOutput(quint32 output, quint32 universe)
++{
++    if (output != 0)
++        return false;
++
++    addToMap(universe, output, Feedback);
++
++    return true;
++}
++
++void OS2LPlugin::closeOutput(quint32 output, quint32 universe)
++{
++    removeFromMap(output, universe, Feedback);
++}
++
++QStringList OS2LPlugin::outputs()
++{
++    /** Same name as the input line, so that QLC+ can pair the
++     *  two when enabling feedback on a universe */
++    return inputs();
++}
++
++QString OS2LPlugin::outputInfo(quint32 output)
++{
++    return inputInfo(output);
++}
++
++void OS2LPlugin::sendFeedBack(quint32 universe, quint32 output, quint32 channel,
++                              uchar value, const QVariant &params)
++{
++    Q_UNUSED(universe)
++    Q_UNUSED(output)
++
++    /** The input profile provides the button name. Without a profile,
++     *  fall back to the names seen in the messages received so far */
++    QString name;
++    if (params.userType() == QMetaType::QString)
++        name = params.toString();
++    if (name.isEmpty())
++        name = m_hashMap.key(quint16(channel & 0xFFFF));
++    if (name.isEmpty())
++        return;
++
++    QJsonObject jsonObj;
++    jsonObj.insert("evt", "feedback");
++    jsonObj.insert("name", name);
++    if (m_pageMap.contains(name))
++        jsonObj.insert("page", m_pageMap.value(name));
++    jsonObj.insert("state", value ? "on" : "off");
++
++    m_feedbackState[name] = value > 0;
++
++    QByteArray message = QJsonDocument(jsonObj).toJson(QJsonDocument::Compact);
++    qDebug() << "[OS2L] Sending feedback" << message;
++
++    for (QTcpSocket *client : std::as_const(m_clients))
++        client->write(message);
++}
++
+ bool OS2LPlugin::enableTCPServer(bool enable)
+ {
+     if (enable)
+@@ -153,6 +216,9 @@ bool OS2LPlugin::enableTCPServer(bool enable)
+             return true;
+ 
+         disconnect(m_tcpServer, SIGNAL(newConnection()), this, SLOT(slotProcessNewTCPConnection()));
++        for (QTcpSocket *client : std::as_const(m_clients))
++            disconnect(client, nullptr, this, nullptr);
++        m_clients.clear();
+         m_tcpServer->close();
+         delete m_tcpServer;
+         m_tcpServer = NULL;
+@@ -187,7 +253,8 @@ void OS2LPlugin::slotProcessNewTCPConnection()
+     QHostAddress senderAddress = clientConnection->peerAddress();
+     qDebug() << "[slotProcessNewTCPConnection] Host connected:" << senderAddress.toString();
+     connect(clientConnection, SIGNAL(readyRead()), this, SLOT(slotProcessTCPPackets()));
+-    connect(clientConnection, SIGNAL(disconnected()), this, SLOT(slotProcessTCPPackets()));
++    connect(clientConnection, SIGNAL(disconnected()), this, SLOT(slotHostDisconnected()));
++    m_clients.append(clientConnection);
+ }
+ 
+ void OS2LPlugin::slotHostDisconnected()
+@@ -195,6 +262,8 @@ void OS2LPlugin::slotHostDisconnected()
+     QTcpSocket *socket = (QTcpSocket *)sender();
+     QHostAddress senderAddress = socket->peerAddress();
+     qDebug() << "Host with address" << senderAddress.toString() << "disconnected!";
++    m_clients.removeAll(socket);
++    socket->deleteLater();
+ }
+ 
+ void OS2LPlugin::slotProcessTCPPackets()
+@@ -234,9 +303,31 @@ void OS2LPlugin::slotProcessTCPPackets()
+         {
+             QJsonValue jName = jsonObj.value("name");
+             QJsonValue jState = jsonObj.value("state");
++            QJsonValue jPage = jsonObj.value("page");
+             qDebug() << "Got button event with name" << jName.toString() << "and state" << jState.toString();
+-            uchar value = jState.toString() == "off" ? 0 : 255;
+-            emit valueChanged(m_inputUniverse, 0, getHash(jName.toString()), value, jName.toString());
++            QString name = jName.toString();
++            bool on = jState.toString() != "off";
++            quint16 channel = getHash(name);
++
++            if (jPage.isString())
++                m_pageMap[name] = jPage.toString();
++
++            if (m_feedbackState.contains(name))
++            {
++                /** Once it gets feedback, VirtualDJ sends a single message per
++                 *  press, with the state it wants -- the opposite of the last
++                 *  feedback -- instead of a press and a release. Turn a change
++                 *  of state into a press and release, so it toggles the widget */
++                if (on != m_feedbackState.value(name))
++                {
++                    emit valueChanged(m_inputUniverse, 0, channel, 255, name);
++                    emit valueChanged(m_inputUniverse, 0, channel, 0, name);
++                }
++            }
++            else
++            {
++                emit valueChanged(m_inputUniverse, 0, channel, on ? 255 : 0, name);
++            }
+         }
+         else if (event == "cmd")
+         {
+diff --git a/plugins/os2l/os2lplugin.h b/plugins/os2l/os2lplugin.h
+index 116f9c2..a3cd0bd 100644
+--- a/plugins/os2l/os2lplugin.h
++++ b/plugins/os2l/os2lplugin.h
+@@ -28,6 +28,7 @@
+ #define OS2L_DEFAULT_PORT 9996
+ 
+ class QTcpServer;
++class QTcpSocket;
+ 
+ class OS2LPlugin final : public QLCIOPlugin
+ {
+@@ -72,6 +73,26 @@ public:
+ 
+     quint32 universe() const;
+ 
++    /*************************************************************************
++     * Feedback
++     *************************************************************************/
++public:
++    /** @reimp */
++    bool openOutput(quint32 output, quint32 universe) override;
++
++    /** @reimp */
++    void closeOutput(quint32 output, quint32 universe) override;
++
++    /** @reimp */
++    QStringList outputs() override;
++
++    /** @reimp */
++    QString outputInfo(quint32 output) override;
++
++    /** @reimp */
++    void sendFeedBack(quint32 universe, quint32 output, quint32 channel,
++                      uchar value, const QVariant &params) override;
++
+ protected:
+     bool enableTCPServer(bool enable);
+     quint16 getHash(QString channel);
+@@ -102,6 +123,15 @@ protected:
+       */
+     QHash<QString, quint16> m_hashMap;
+ 
++    /** Last "page" each button name arrived with, echoed back in feedback */
++    QHash<QString, QString> m_pageMap;
++
++    /** Last state sent as feedback for each button name */
++    QHash<QString, bool> m_feedbackState;
++
++    /** Connected OS2L hosts, which receive the feedback messages */
++    QList<QTcpSocket *> m_clients;
++
+     QByteArray m_packetLeftOver;
+ 
+     /*********************************************************************
+diff --git a/qmlui/virtualconsole/vcbutton.cpp b/qmlui/virtualconsole/vcbutton.cpp
+index 51fd6a3..9f5b11e 100644
+--- a/qmlui/virtualconsole/vcbutton.cpp
++++ b/qmlui/virtualconsole/vcbutton.cpp
+@@ -64,6 +64,9 @@ VCButton::VCButton(Doc *doc, QObject *parent)
+     setType(VCWidget::ButtonWidget);
+ 
+     registerExternalControl(INPUT_PRESSURE_ID, tr("Pressure"), true);
++
++    connect(m_doc->inputOutputMap(), &InputOutputMap::blackoutChanged,
++            this, &VCButton::slotBlackoutChanged);
+ }
+ 
+ VCButton::~VCButton()
+@@ -290,6 +293,12 @@ void VCButton::slotFunctionStopped(quint32 fid)
+     }
+ }
+ 
++void VCButton::slotBlackoutChanged(bool state)
++{
++    if (actionType() == Blackout)
++        setState(state ? Active : Inactive);
++}
++
+ void VCButton::slotFunctionFlashing(quint32 fid, bool state)
+ {
+     // Do not change the state of the button for Blackout or Stop All Functions buttons
+@@ -435,7 +444,6 @@ void VCButton::requestStateChange(bool pressed)
+         case Blackout:
+         {
+             m_doc->inputOutputMap()->toggleBlackout();
+-            setState(pressed ? Active : Inactive);
+         }
+         break;
+         case StopAll:
+@@ -472,6 +480,9 @@ void VCButton::setActionType(ButtonAction actionType)
+ 
+     m_actionType = actionType;
+     emit actionTypeChanged(actionType);
++
++    if (actionType == Blackout)
++        slotBlackoutChanged(m_doc->inputOutputMap()->blackout());
+ }
+ 
+ QString VCButton::actionToString(VCButton::ButtonAction action)
+diff --git a/qmlui/virtualconsole/vcbutton.h b/qmlui/virtualconsole/vcbutton.h
+index 233d463..085faca 100644
+--- a/qmlui/virtualconsole/vcbutton.h
++++ b/qmlui/virtualconsole/vcbutton.h
+@@ -113,6 +113,9 @@ protected slots:
+     /** Basically the same as slotFunctionStopped() but for flash signal */
+     void slotFunctionFlashing(quint32 fid, bool state);
+ 
++    /** Keep a Blackout button in sync with the actual blackout state */
++    void slotBlackoutChanged(bool state);
++
+ private:
+     FunctionParent functionParent() const;
+ 
