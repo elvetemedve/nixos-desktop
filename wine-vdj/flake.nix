@@ -29,7 +29,7 @@
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
     wine-src = {
-      url = "github:wine-mirror/wine?ref=wine-11.17";
+      url = "github:wine-mirror/wine?ref=wine-11.19";
       flake = false;
     };
 
