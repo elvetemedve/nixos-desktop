@@ -1,0 +1,131 @@
+diff --git a/engine/src/inputoutputmap.cpp b/engine/src/inputoutputmap.cpp
+index f4e47ed..7b07d50 100644
+--- a/engine/src/inputoutputmap.cpp
++++ b/engine/src/inputoutputmap.cpp
+@@ -50,6 +50,7 @@ InputOutputMap::InputOutputMap(const Doc *doc, quint32 universes)
+     , m_localProfilesLoaded(false)
+     , m_currentBPM(0)
+     , m_beatTime(new QElapsedTimer())
++    , m_pluginBpm(false)
+     , m_networkServerType(NativeServer)
+     , m_networkServerAutoStart(false)
+ {
+@@ -417,6 +418,9 @@ bool InputOutputMap::setInputPatch(quint32 universe, const QString &pluginName,
+         {
+             disconnect(currInPatch, SIGNAL(inputValueChanged(quint32,quint32,uchar,const QString&)),
+                        this, SLOT(slotPluginBeat(quint32,quint32,uchar,const QString&)));
++            disconnect(currInPatch->plugin(), SIGNAL(bpmReceived(quint32,quint32,int)),
++                       this, SLOT(slotPluginBpm(quint32,quint32,int)));
++            m_pluginBpm = false;
+         }
+     }
+     InputPatch *ip = NULL;
+@@ -455,6 +459,8 @@ bool InputOutputMap::setInputPatch(quint32 universe, const QString &pluginName,
+             {
+                 connect(ip, SIGNAL(inputValueChanged(quint32,quint32,uchar,const QString&)),
+                         this, SLOT(slotPluginBeat(quint32,quint32,uchar,const QString&)));
++                connect(ip->plugin(), SIGNAL(bpmReceived(quint32,quint32,int)),
++                        this, SLOT(slotPluginBpm(quint32,quint32,int)), Qt::UniqueConnection);
+             }
+         }
+     }
+@@ -1034,6 +1040,7 @@ void InputOutputMap::setBeatGeneratorType(InputOutputMap::BeatGeneratorType type
+     }
+ 
+     m_beatGeneratorType = type;
++    m_pluginBpm = false;
+     qDebug() << "[InputOutputMap] setting beat type:" << m_beatGeneratorType;
+ 
+     switch (m_beatGeneratorType)
+@@ -1131,6 +1138,15 @@ void InputOutputMap::slotProcessBeat()
+     qint64 elapsed = m_beatTime->elapsed();
+     m_beatTime->restart();
+ 
++    // the plugin already told the BPM number: measuring the beats (which are
++    // processed on the MasterTimer ticks) would only make it jitter
++    if (m_pluginBpm)
++    {
++        m_doc->masterTimer()->requestBeat();
++        emit beat();
++        return;
++    }
++
+     int bpm = qRound(60000.0 / (float)elapsed);
+     float currBpmTime = 60000.0 / (float)m_currentBPM;
+     // here we check if the difference between the current BPM duration
+@@ -1165,6 +1181,18 @@ void InputOutputMap::slotPluginBeat(quint32 universe, quint32 channel, uchar val
+     slotProcessBeat();
+ }
+ 
++void InputOutputMap::slotPluginBpm(quint32 universe, quint32 input, int bpm)
++{
++    Q_UNUSED(universe)
++    Q_UNUSED(input)
++
++    if (m_beatGeneratorType != Plugin)
++        return;
++
++    m_pluginBpm = true;
++    setBpmNumber(bpm);
++}
++
+ /*********************************************************************
+  * Network server
+  *********************************************************************/
+diff --git a/engine/src/inputoutputmap.h b/engine/src/inputoutputmap.h
+index a03b58c..c448f06 100644
+--- a/engine/src/inputoutputmap.h
++++ b/engine/src/inputoutputmap.h
+@@ -606,6 +606,7 @@ public:
+ protected slots:
+     void slotMasterTimerBeat();
+     void slotPluginBeat(quint32 universe, quint32 channel, uchar value, const QString &key);
++    void slotPluginBpm(quint32 universe, quint32 input, int bpm);
+     void slotProcessBeat();
+ 
+ signals:
+@@ -617,6 +618,8 @@ private:
+     BeatGeneratorType m_beatGeneratorType;
+     int m_currentBPM;
+     QElapsedTimer *m_beatTime;
++    /** The plugin sends the BPM number, so it is not measured from the beats */
++    bool m_pluginBpm;
+     AudioCapture *m_inputCapture;
+ 
+     /*********************************************************************
+diff --git a/plugins/interfaces/qlcioplugin.h b/plugins/interfaces/qlcioplugin.h
+index 3f572f4..706a760 100644
+--- a/plugins/interfaces/qlcioplugin.h
++++ b/plugins/interfaces/qlcioplugin.h
+@@ -304,6 +304,16 @@ signals:
+      */
+     void valueChanged(quint32 universe, quint32 input, quint32 channel, uchar value, const QString& key = 0);
+ 
++    /**
++     * Tells the tempo of the beats a plugin sends, for plugins whose source
++     * knows it (e.g. OS2L), so it needs not be measured from the beats.
++     *
++     * @param universe The universe ID the beats are sent to
++     * @param input The input line the beats come from
++     * @param bpm The tempo in beats per minute
++     */
++    void bpmReceived(quint32 universe, quint32 input, int bpm);
++
+     /*************************************************************************
+      * Configure
+      *************************************************************************/
+diff --git a/plugins/os2l/os2lplugin.cpp b/plugins/os2l/os2lplugin.cpp
+index d62b7e3..88bdd4e 100644
+--- a/plugins/os2l/os2lplugin.cpp
++++ b/plugins/os2l/os2lplugin.cpp
+@@ -341,6 +341,10 @@ void OS2LPlugin::slotProcessTCPPackets()
+         else if (event == "beat")
+         {
+            qDebug() << "Got beat message" << message;
++           /* VirtualDJ sends the track's tempo with each beat */
++           QJsonValue jBpm = jsonObj.value("bpm");
++           if (jBpm.isDouble() && jBpm.toDouble() > 0)
++               emit bpmReceived(m_inputUniverse, 0, qRound(jBpm.toDouble()));
+            emit valueChanged(m_inputUniverse, 0, 8341, 255, "beat");
+         }
+     }

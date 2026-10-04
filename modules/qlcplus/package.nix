@@ -33,7 +33,10 @@ stdenv.mkDerivation rec {
 
   # OS2L feedback, so VirtualDJ can light its os2l_button pads; see
   # ./default.nix.
-  patches = [ ./os2l-feedback.patch ];
+  patches = [
+    ./os2l-feedback.patch
+    ./os2l-bpm.patch
+  ];
 
   nativeBuildInputs = [
     cmake

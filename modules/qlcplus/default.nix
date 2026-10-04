@@ -18,6 +18,12 @@
 #
 # Feedback is per universe: in QLC+'s Inputs/Outputs view, enable the "F"
 # toggle next to the universe's OS2L input.
+#
+# With the beat generator set to Plugin, upstream works the BPM out from the
+# time between OS2L beats, which QLC+ only handles on its 20 ms timer ticks:
+# 140 BPM reads as anything from 136 to 143. ./os2l-bpm.patch uses the "bpm"
+# VirtualDJ sends with each beat instead, rounded to a whole number (QLC+
+# keeps it as one); the beats themselves still advance beat-tempo functions.
 { pkgs, ... }:
 {
   environment.systemPackages = [ (pkgs.callPackage ./package.nix { }) ];
