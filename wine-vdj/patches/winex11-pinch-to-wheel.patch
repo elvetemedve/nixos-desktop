@@ -1,0 +1,118 @@
+--- a/dlls/winex11.drv/mouse.c
++++ b/dlls/winex11.drv/mouse.c
+@@ -137,6 +137,7 @@
+ #ifdef HAVE_X11_EXTENSIONS_XINPUT2_H
+ static BOOL xinput2_available;
+ static BOOL broken_rawevents;
++static BOOL xinput2_gestures;  /* server speaks XI 2.4, so pinch events may be selected */
+ #define MAKE_FUNCPTR(f) static typeof(f) * p##f
+ MAKE_FUNCPTR(XIGetClientPointer);
+ MAKE_FUNCPTR(XIFreeDeviceInfo);
+@@ -347,6 +348,15 @@
+         XISetMask( mask_bits, XI_TouchBegin );
+         XISetMask( mask_bits, XI_TouchUpdate );
+         XISetMask( mask_bits, XI_TouchEnd );
++#ifdef XI_GesturePinchBegin
++        /* selecting these from a client below XI 2.4 is a BadValue */
++        if (xinput2_gestures)
++        {
++            XISetMask( mask_bits, XI_GesturePinchBegin );
++            XISetMask( mask_bits, XI_GesturePinchUpdate );
++            XISetMask( mask_bits, XI_GesturePinchEnd );
++        }
++#endif
+     }
+ 
+     pXISelectEvents( display, window, &mask, 1 );
+@@ -384,7 +394,11 @@
+ void x11drv_xinput2_init( struct x11drv_thread_data *data )
+ {
+     unsigned char mask_bits[XIMaskLen(XI_LASTEVENT)];
++#ifdef XI_GesturePinchBegin
++    int major = 2, minor = 4;
++#else
+     int major = 2, minor = 2;
++#endif
+     XIEventMask mask;
+     int count;
+ 
+@@ -394,6 +408,8 @@
+         xinput2_available = FALSE;
+         return;
+     }
++    /* XIQueryVersion answers with the highest version both sides support */
++    xinput2_gestures = major > 2 || (major == 2 && minor >= 4);
+ 
+     mask.mask     = mask_bits;
+     mask.mask_len = sizeof(mask_bits);
+@@ -1831,6 +1847,46 @@
+     return TRUE;
+ }
+ 
++#ifdef XI_GesturePinchBegin
++
++/* pinch scale ratio between two wheel notches */
++#define PINCH_NOTCH_RATIO 1.15
++
++/***********************************************************************
++ *           X11DRV_GesturePinchEvent
++ *
++ * Touchpad pinch, turned into vertical wheel notches at the cursor:
++ * spreading the fingers is wheel up, pinching them together wheel down.
++ * Windows itself would add MK_CONTROL (pinch as Ctrl+wheel), but plain
++ * wheel is what zooms in apps that zoom on the wheel, such as VirtualDJ's
++ * waveforms and BPM editor.
++ */
++static BOOL X11DRV_GesturePinchEvent( XGenericEventCookie *xev )
++{
++    XIGesturePinchEvent *event = xev->data;
++    struct x11drv_thread_data *thread_data = x11drv_thread_data();
++    UINT time = EVENT_x11_time_to_win32_time( event->time );
++    POINT pt = { 0, 0 };
++    int notches;
++
++    if (event->evtype == XI_GesturePinchBegin) thread_data->pinch_notches = 0;
++    if (event->evtype == XI_GesturePinchEnd) return TRUE;
++
++    /* event->scale is relative to the start of the gesture */
++    if (event->scale <= 0) return FALSE;
++    notches = trunc( log( event->scale ) / log( PINCH_NOTCH_RATIO ) );
++    TRACE( "pinch scale %f, notches %d (sent %d)\n", event->scale, notches, thread_data->pinch_notches );
++
++    /* one message per notch: some apps step once per WM_MOUSEWHEEL whatever its delta */
++    for (; thread_data->pinch_notches < notches; thread_data->pinch_notches++)
++        send_mouse_input( NULL, pt, MOUSEEVENTF_WHEEL, WHEEL_DELTA, time, NULL );
++    for (; thread_data->pinch_notches > notches; thread_data->pinch_notches--)
++        send_mouse_input( NULL, pt, MOUSEEVENTF_WHEEL, -WHEEL_DELTA, time, NULL );
++    return TRUE;
++}
++
++#endif /* XI_GesturePinchBegin */
++
+ #endif /* HAVE_X11_EXTENSIONS_XINPUT2_H */
+ 
+ 
+@@ -1907,6 +1963,13 @@
+     case XI_TouchEnd:
+         ret = X11DRV_TouchEvent( hwnd, event );
+         break;
++#ifdef XI_GesturePinchBegin
++    case XI_GesturePinchBegin:
++    case XI_GesturePinchUpdate:
++    case XI_GesturePinchEnd:
++        ret = X11DRV_GesturePinchEvent( event );
++        break;
++#endif
+ 
+     default:
+         TRACE( "Unhandled event %#x\n", event->evtype );
+--- a/dlls/winex11.drv/x11drv.h
++++ b/dlls/winex11.drv/x11drv.h
+@@ -431,6 +431,7 @@
+     double              raw_x;
+     double              raw_y;
+     int      xinput2_pointer;      /* XInput2 master pointer device id */
++    int      pinch_notches;        /* wheel notches sent so far for the current pinch */
+ #endif /* HAVE_X11_EXTENSIONS_XINPUT2_H */
+     int      root_window_users;    /* counter for root window XISelectEvents */
+ 

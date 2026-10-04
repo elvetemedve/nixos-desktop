@@ -3,12 +3,14 @@
     Patched Wine + PipeASIO, built for running VirtualDJ with the
     AlphaTheta/Pioneer DDJ-FLX10 controller.
 
-    Five Wine patches (dropped once merged upstream — see patches/README.md).
+    Six Wine patches (dropped once merged upstream — see patches/README.md).
     Three fix MIDI device identification and ASIO audio-endpoint
     identification, which VirtualDJ needs to auto-recognise the controller;
     the fourth fixes shell32 drive attributes, without which VirtualDJ's
     Local Music → Drives folder lists nothing; the fifth is wine-staging's
-    wined3d swapchain fix, without which the skin renders too dark.
+    wined3d swapchain fix, without which the skin renders too dark; the
+    sixth turns touchpad pinch into mouse-wheel notches, so pinch zooms
+    the waveforms and BPM editor.
     PipeASIO (https://github.com/M0n7y5/pipeasio) provides a low-latency
     ASIO-to-PipeWire audio driver, built here against this same Wine so its
     winelib PE/unix split stays ABI-consistent with it.
@@ -65,6 +67,7 @@
           ./patches/mmdevapi-deviceinterface-path.patch
           ./patches/shell32-drive-canrename.patch
           ./patches/0003-wined3d-fix-vk-swapchain-rendering-too-dark-by-suppo.patch
+          ./patches/winex11-pinch-to-wheel.patch
         ];
       });
 

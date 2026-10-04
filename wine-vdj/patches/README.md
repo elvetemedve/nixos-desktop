@@ -1,7 +1,7 @@
 # Patches
 
-Four local patches plus one carried from wine-staging. All apply cleanly with
-`patch -p1` against the pinned `wine-src` (currently Wine 11.16).
+Five local patches plus one carried from wine-staging. All apply cleanly with
+`patch -p1` against the pinned `wine-src` (currently Wine 11.17).
 
 - `winealsa-midi-deviceinterface.patch` — `dlls/winealsa.drv/alsamidi.c`.
   Derives USB vid/pid/interface-number from the ALSA sequencer client and
@@ -39,6 +39,20 @@ Four local patches plus one carried from wine-staging. All apply cleanly with
   swapchain output renders too dark and VirtualDJ's skin shows UI glitches.
   This build is `.full` rather than `.staging`, so the patch is carried here
   instead of coming in with the Staging set.
+
+- `winex11-pinch-to-wheel.patch` — `dlls/winex11.drv/mouse.c`,
+  `dlls/winex11.drv/x11drv.h`. Negotiates XInput 2.4 instead of 2.2, selects
+  touchpad pinch gesture events next to the touch events Wine already
+  selects on its windows, and turns each 15% of pinch scale into one
+  `WM_MOUSEWHEEL` notch at the cursor: spreading the fingers is wheel up,
+  pinching wheel down. Stock Wine never asks the X server for pinch events,
+  so the BPM editor, which zooms only on the wheel and ignores keyboard
+  mappings, cannot be zoomed without a mouse wheel or two-finger scroll.
+  Deliberately not Windows-faithful: Windows delivers pinch to legacy apps
+  as Ctrl+wheel, but plain wheel is what zooms in VirtualDJ. Needs an X server
+  with XI 2.4 gestures (verified with XWayland 24.1 under mutter, which
+  forwards `zwp_pointer_gestures_v1` pinches to X11 windows); an older
+  server negotiates a lower version and nothing changes. Not upstreamable as is.
 
 Delete a patch from `flake.nix`'s `patches` list once its fix lands in
 upstream Wine and the pinned `wine-src` moves past it.
