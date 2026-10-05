@@ -38,6 +38,13 @@
     };
   };
 
+  # Keep KWallet out of Plasma sessions so it doesn't race KeePassXC for the
+  # org.freedesktop.secrets bus name.
+  xdg.configFile."kwalletrc".text = ''
+    [Wallet]
+    Enabled=false
+  '';
+
   xdg.autostart.enable = true; # Whether to enable creation of XDG autostart entries.
 }
 

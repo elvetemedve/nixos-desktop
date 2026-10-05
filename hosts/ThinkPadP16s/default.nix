@@ -7,6 +7,7 @@
     ../../modules/webserver.nix
     ../../modules/security.nix
     ../../modules/system.nix
+    ../../modules/plasma.nix
 
     ../../modules/ddj-flx10.nix
     ../../modules/external-ssd.nix
