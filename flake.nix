@@ -40,6 +40,10 @@
       url = "github:DamianKA1993/blackwell-egpu-manager/v1.5.6";
       flake = false;
     };
+    whisrs = {
+      url = "github:y0sif/whisrs";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = inputs@{ nixpkgs, home-manager, nixos-06cb-009a-fingerprint-sensor, vicinae, vicinae-extensions, wine-vdj, ... }: {

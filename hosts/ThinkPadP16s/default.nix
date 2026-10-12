@@ -9,6 +9,7 @@
     ../../modules/system.nix
     ../../modules/plasma.nix
     ../../modules/cosmic.nix
+    ../../modules/whisrs.nix
 
     ../../modules/ddj-flx10.nix
     ../../modules/external-ssd.nix
