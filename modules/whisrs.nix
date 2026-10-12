@@ -6,8 +6,9 @@
 # whisper.cpp then builds without AVX at all. Measured on this machine, 8 s of
 # speech took ~25 s on that build vs ~0.7 s with Vulkan on the Arc iGPU.
 #
-# The daemon is started by hand (`whisrsd`) or via upstream's user unit
-# (`systemctl --user enable --now whisrs.service`); it is not enabled here.
+# The daemon runs as upstream's whisrs.service user unit, started with the
+# graphical session; don't also start `whisrsd` by hand, the second instance
+# refuses to run.
 { pkgs, inputs, ... }:
 
 let
@@ -45,4 +46,17 @@ in
 
   # /dev/uinput access (input group + uaccess) for keystroke injection.
   services.udev.packages = [ whisrs ];
+
+  # Upstream's unit is WantedBy=default.target, which also starts it on a TTY
+  # or SSH login, before the compositor has exported WAYLAND_DISPLAY. Tie it to
+  # the graphical session instead, so it also restarts with the right desktop
+  # detection when switching between Plasma and GNOME.
+  systemd.packages = [ whisrs ];
+  systemd.user.services.whisrs = {
+    wantedBy = [ "graphical-session.target" ];
+    partOf = [ "graphical-session.target" ];
+    # whisrs shells out (`sh -c` for [hooks], wl-copy for the clipboard modes);
+    # give it the system profile instead of NixOS's minimal unit PATH.
+    path = [ "/run/current-system/sw" ];
+  };
 }
