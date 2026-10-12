@@ -1,6 +1,6 @@
 # Patches
 
-Five local patches plus one carried from wine-staging. All apply cleanly with
+Six local patches plus one carried from wine-staging. All apply cleanly with
 `patch -p1` against the pinned `wine-src` (currently Wine 11.19).
 
 - `winealsa-midi-deviceinterface.patch` — `dlls/winealsa.drv/alsamidi.c`.
@@ -53,6 +53,23 @@ Five local patches plus one carried from wine-staging. All apply cleanly with
   with XI 2.4 gestures (verified with XWayland 24.1 under mutter, which
   forwards `zwp_pointer_gestures_v1` pinches to X11 windows); an older
   server negotiates a lower version and nothing changes. Not upstreamable as is.
+
+- `ntdll-execution-state-idle-inhibit.patch` — `dlls/ntdll/unix/system.c`,
+  `dlls/ntdll/Makefile.in`. Turns `NtSetThreadExecutionState` from a stub
+  into a logind "idle" inhibitor lock: `ES_CONTINUOUS | ES_DISPLAY_REQUIRED`
+  takes it, `ES_CONTINUOUS` alone releases it. VirtualDJ makes exactly that
+  pair, once at startup and once at exit (traced with `+relay`), and the
+  DDJ-FLX10 talks MIDI/HID rather than through libinput, so without this a
+  set played from the controller alone lets the screen dim, blank and lock.
+  logind returns the lock as a file descriptor, so a crash or kill releases
+  it too. libdbus is `dlopen`ed the way `mountmgr.sys` does it, on a private
+  connection closed right after the call. Honoured by KDE's PowerDevil
+  (no dimming, blanking, auto-lock or idle suspend while held); GNOME does
+  not watch logind idle inhibitors as far as known (untested). Deliberate
+  simplifications: one state per process rather than per thread,
+  `ES_SYSTEM_REQUIRED` alone takes no lock (logind's nearest match would
+  also refuse user-initiated suspend), and one-shot calls without
+  `ES_CONTINUOUS` are not forwarded. Not filed upstream yet.
 
 Delete a patch from `flake.nix`'s `patches` list once its fix lands in
 upstream Wine and the pinned `wine-src` moves past it.

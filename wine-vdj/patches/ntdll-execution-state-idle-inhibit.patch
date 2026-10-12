@@ -1,0 +1,208 @@
+--- a/dlls/ntdll/Makefile.in
++++ b/dlls/ntdll/Makefile.in
+@@ -4,7 +4,7 @@
+ IMPORTLIB = ntdll
+ IMPORTS   = $(SYMCRYPT_PE_LIBS) $(ZLIB_PE_LIBS) $(MUSL_PE_LIBS)
+ EXTRAINCL = $(SYMCRYPT_PE_CFLAGS) $(ZLIB_PE_CFLAGS)
+-UNIX_CFLAGS  = $(HWLOC_CFLAGS)
++UNIX_CFLAGS  = $(HWLOC_CFLAGS) $(DBUS_CFLAGS)
+ UNIX_LIBS    = $(IOKIT_LIBS) $(COREFOUNDATION_LIBS) $(CORESERVICES_LIBS) $(RT_LIBS) $(PTHREAD_LIBS) $(I386_LIBS) $(PROCSTAT_LIBS) $(HWLOC_LIBS)
+ 
+ EXTRADLLFLAGS = -nodefaultlibs
+--- a/dlls/ntdll/unix/system.c
++++ b/dlls/ntdll/unix/system.c
+@@ -77,6 +77,11 @@
+ # include <hwloc.h>
+ #endif
+ 
++#ifdef SONAME_LIBDBUS_1
++# include <dlfcn.h>
++# include <dbus/dbus.h>
++#endif
++
+ #ifdef __linux__
+ # define AT_HWCAP2          26
+ #endif
+@@ -4853,15 +4858,181 @@
+ }
+ 
+ 
++/* A continuous ES_DISPLAY_REQUIRED is held as a logind "idle" inhibitor lock.
++ * org.freedesktop.login1.Manager.Inhibit hands back a file descriptor and the
++ * lock lasts exactly as long as that descriptor is open, so it is released on
++ * ES_CONTINUOUS alone and also, by the kernel, when the process exits or
++ * crashes. Desktop power managers that watch logind inhibitors (KDE's
++ * PowerDevil does) then skip dimming, screen blanking, auto-lock and idle
++ * suspend.
++ *
++ * ES_SYSTEM_REQUIRED alone takes no lock: logind's nearest match, a "sleep"
++ * block, would also refuse user-initiated suspend, which Windows allows. */
++static pthread_mutex_t execution_state_mutex = PTHREAD_MUTEX_INITIALIZER;
++static int idle_inhibit_fd = -1;
++
++#ifdef SONAME_LIBDBUS_1
++
++#define DBUS_FUNCS \
++    DO_FUNC(dbus_bus_get_private); \
++    DO_FUNC(dbus_connection_close); \
++    DO_FUNC(dbus_connection_send_with_reply_and_block); \
++    DO_FUNC(dbus_connection_set_exit_on_disconnect); \
++    DO_FUNC(dbus_connection_unref); \
++    DO_FUNC(dbus_error_free); \
++    DO_FUNC(dbus_error_init); \
++    DO_FUNC(dbus_error_is_set); \
++    DO_FUNC(dbus_message_append_args); \
++    DO_FUNC(dbus_message_get_args); \
++    DO_FUNC(dbus_message_new_method_call); \
++    DO_FUNC(dbus_message_unref); \
++    DO_FUNC(dbus_threads_init_default)
++
++#define DO_FUNC(f) static typeof(f) * p_##f
++DBUS_FUNCS;
++#undef DO_FUNC
++
++/* called with execution_state_mutex held */
++static BOOL load_dbus(void)
++{
++    static int loaded = -1;
++    void *handle;
++
++    if (loaded != -1) return loaded;
++    loaded = FALSE;
++
++    if (!(handle = dlopen( SONAME_LIBDBUS_1, RTLD_NOW )))
++    {
++        WARN( "failed to load %s: %s\n", SONAME_LIBDBUS_1, dlerror() );
++        return FALSE;
++    }
++#define DO_FUNC(f) if (!(p_##f = dlsym( handle, #f ))) \
++    { \
++        WARN( "%s not found in %s\n", #f, SONAME_LIBDBUS_1 ); \
++        dlclose( handle ); \
++        return FALSE; \
++    }
++    DBUS_FUNCS;
++#undef DO_FUNC
++
++    p_dbus_threads_init_default();
++    return (loaded = TRUE);
++}
++
++/* The bare image name, for the "who" logind shows next to the lock. Non-ASCII
++ * bytes are masked: D-Bus rejects strings that are not valid UTF-8. */
++static void get_inhibitor_who( char *buf, size_t size )
++{
++    const char *name = (main_argv && main_argv[0]) ? main_argv[0] : "wine", *p;
++    size_t i;
++
++    if ((p = strrchr( name, '\\' ))) name = p + 1;
++    if ((p = strrchr( name, '/' ))) name = p + 1;
++    for (i = 0; i + 1 < size && name[i]; i++) buf[i] = (unsigned char)name[i] < 0x80 ? name[i] : '?';
++    buf[i] = 0;
++}
++
++/* Returns the lock's file descriptor, or -1. The connection is private and
++ * closed again right away: the lock lives in the descriptor, not the
++ * connection, and a private connection cannot disturb any other libdbus user
++ * in the process. exit_on_disconnect is off so a bus restart can never take
++ * the application down with it. */
++static int take_idle_inhibitor(void)
++{
++    const char *what = "idle", *mode = "block";
++    const char *why = "SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED)";
++    char who_buf[64];
++    const char *who = who_buf;
++    DBusConnection *conn;
++    DBusMessage *msg, *reply;
++    DBusError err;
++    int fd = -1;
++
++    if (!load_dbus()) return -1;
++    get_inhibitor_who( who_buf, sizeof(who_buf) );
++
++    p_dbus_error_init( &err );
++    if (!(conn = p_dbus_bus_get_private( DBUS_BUS_SYSTEM, &err )))
++    {
++        WARN( "cannot connect to the system bus: %s\n", err.message );
++        p_dbus_error_free( &err );
++        return -1;
++    }
++    p_dbus_connection_set_exit_on_disconnect( conn, FALSE );
++
++    if ((msg = p_dbus_message_new_method_call( "org.freedesktop.login1", "/org/freedesktop/login1",
++                                               "org.freedesktop.login1.Manager", "Inhibit" )))
++    {
++        if (p_dbus_message_append_args( msg, DBUS_TYPE_STRING, &what, DBUS_TYPE_STRING, &who,
++                                        DBUS_TYPE_STRING, &why, DBUS_TYPE_STRING, &mode,
++                                        DBUS_TYPE_INVALID ) &&
++            (reply = p_dbus_connection_send_with_reply_and_block( conn, msg, 2000, &err )))
++        {
++            if (!p_dbus_message_get_args( reply, &err, DBUS_TYPE_UNIX_FD, &fd, DBUS_TYPE_INVALID ))
++                fd = -1;
++            p_dbus_message_unref( reply );
++        }
++        p_dbus_message_unref( msg );
++    }
++    if (p_dbus_error_is_set( &err ))
++    {
++        WARN( "logind Inhibit failed: %s\n", err.message );
++        p_dbus_error_free( &err );
++    }
++
++    p_dbus_connection_close( conn );
++    p_dbus_connection_unref( conn );
++    return fd;
++}
++
++#else  /* SONAME_LIBDBUS_1 */
++
++static int take_idle_inhibitor(void)
++{
++    FIXME( "no D-Bus support, cannot keep the display on\n" );
++    return -1;
++}
++
++#endif  /* SONAME_LIBDBUS_1 */
++
++/* called with execution_state_mutex held */
++static void update_idle_inhibitor( BOOL wanted )
++{
++    if (wanted == (idle_inhibit_fd != -1)) return;
++
++    if (wanted)
++    {
++        /* on failure this stays -1, so the next continuous request retries */
++        idle_inhibit_fd = take_idle_inhibitor();
++        TRACE( "idle inhibitor %s, fd %d\n", idle_inhibit_fd != -1 ? "taken" : "not taken", idle_inhibit_fd );
++    }
++    else
++    {
++        close( idle_inhibit_fd );
++        idle_inhibit_fd = -1;
++        TRACE( "idle inhibitor released\n" );
++    }
++}
++
+ /******************************************************************************
+  *              NtSetThreadExecutionState  (NTDLL.@)
++ *
++ * Windows keeps a continuous state per thread and drops it when the thread
++ * exits; this keeps one per process, last ES_CONTINUOUS call wins, and drops
++ * it when the process exits. One-shot calls (no ES_CONTINUOUS), which on
++ * Windows only reset the idle timers, are not forwarded.
+  */
+ NTSTATUS WINAPI NtSetThreadExecutionState( EXECUTION_STATE new_state, EXECUTION_STATE *old_state )
+ {
+     static EXECUTION_STATE current = ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED | ES_USER_PRESENT;
+ 
+-    WARN( "(0x%x, %p): stub, harmless.\n", new_state, old_state );
++    TRACE( "(0x%x, %p)\n", new_state, old_state );
++
++    mutex_lock( &execution_state_mutex );
+     *old_state = current;
+     if (!(current & ES_CONTINUOUS) || (new_state & ES_CONTINUOUS)) current = new_state;
++    update_idle_inhibitor( (current & (ES_CONTINUOUS | ES_DISPLAY_REQUIRED)) ==
++                           (ES_CONTINUOUS | ES_DISPLAY_REQUIRED) );
++    mutex_unlock( &execution_state_mutex );
+     return STATUS_SUCCESS;
+ }
