@@ -20,10 +20,6 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nixos-06cb-009a-fingerprint-sensor = {
-      url = "github:elvetemedve/nixos-06cb-009a-fingerprint-sensor/master";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     vicinae = {
       url = "github:vicinaehq/vicinae";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -46,7 +42,7 @@
     };
   };
 
-  outputs = inputs@{ nixpkgs, home-manager, nixos-06cb-009a-fingerprint-sensor, vicinae, vicinae-extensions, wine-vdj, ... }: {
+  outputs = inputs@{ nixpkgs, home-manager, vicinae, vicinae-extensions, wine-vdj, ... }: {
     nixosConfigurations = {
 
       "ThinkPadP16s" = let
@@ -78,7 +74,6 @@
         nixpkgs.lib.nixosSystem {
         modules = [
           ./hosts/ThinkPadT580
-          nixos-06cb-009a-fingerprint-sensor.nixosModules."06cb-009a-fingerprint-sensor"
 
           home-manager.nixosModules.home-manager
           {

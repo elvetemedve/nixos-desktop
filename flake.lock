@@ -71,27 +71,6 @@
         "type": "github"
       }
     },
-    "nixos-06cb-009a-fingerprint-sensor": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1753006599,
-        "narHash": "sha256-AlMO0wtmWRRyg2Q3oXCmFM1pQNdily4hqj9TrXTzqtM=",
-        "owner": "elvetemedve",
-        "repo": "nixos-06cb-009a-fingerprint-sensor",
-        "rev": "dd2a6eff575aa10d3d3d13e524e605985d28d4c4",
-        "type": "github"
-      },
-      "original": {
-        "owner": "elvetemedve",
-        "ref": "master",
-        "repo": "nixos-06cb-009a-fingerprint-sensor",
-        "type": "github"
-      }
-    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1792502884,
@@ -167,7 +146,6 @@
       "inputs": {
         "blackwell-egpu-manager": "blackwell-egpu-manager",
         "home-manager": "home-manager",
-        "nixos-06cb-009a-fingerprint-sensor": "nixos-06cb-009a-fingerprint-sensor",
         "nixpkgs": "nixpkgs",
         "vicinae": "vicinae",
         "vicinae-extensions": "vicinae-extensions",
