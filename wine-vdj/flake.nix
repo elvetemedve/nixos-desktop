@@ -36,7 +36,7 @@
     };
 
     pipeasio-src = {
-      url = "github:M0n7y5/pipeasio?ref=v1.5.0";
+      url = "github:M0n7y5/pipeasio?ref=v1.10.0";
       flake = false;
     };
   };
@@ -84,22 +84,20 @@
 
         # wrapQtAppsHook: pipeasio-settings is a real Qt6 GUI app, so it
         # needs wrapping with the right plugin/QML search paths.
-        nativeBuildInputs = with pkgs; [ cmake ninja pkg-config wine-base qt6.wrapQtAppsHook ];
-        buildInputs = with pkgs; [ pipewire qt6.qtbase ];
+        # The mingw gcc links the driver's PE half (x86_64-windows/
+        # pipeasio64.dll), the same cross compiler nixpkgs builds wine-base's
+        # own PE modules with; the unixlib half uses the host gcc.
+        nativeBuildInputs = with pkgs; [
+          cmake ninja pkg-config wine-base qt6.wrapQtAppsHook
+          pkgsCross.mingwW64.buildPackages.gcc
+        ];
+        # yaml-cpp, libarchive, zlib: the installation manager (pipeasio-manage),
+        # which the settings panel builds on.
+        buildInputs = with pkgs; [ pipewire qt6.qtbase yaml-cpp libarchive zlib ];
 
-        # Wine 10+ needs pipeasio.dll(.so) symlinks alongside pipeasio64.*;
-        # add them if the project's own install() doesn't already.
-        postInstall = ''
-          winDir=$out/lib/wine/x86_64-windows
-          unixDir=$out/lib/wine/x86_64-unix
-
-          if [ -e "$winDir/pipeasio64.dll" ] && [ ! -e "$winDir/pipeasio.dll" ]; then
-            ln -s pipeasio64.dll "$winDir/pipeasio.dll"
-          fi
-          if [ -e "$unixDir/pipeasio64.dll.so" ] && [ ! -e "$unixDir/pipeasio.dll.so" ]; then
-            ln -s pipeasio64.dll.so "$unixDir/pipeasio.dll.so"
-          fi
-        '';
+        # The driver log (PIPEASIO_DEBUG=1) names the commit it was built
+        # from; the source here is no git checkout, so hand it over.
+        cmakeFlags = [ "-DPIPEASIO_GIT_COMMIT=${pipeasio-src.rev}" ];
       };
     in
     {
