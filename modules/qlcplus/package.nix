@@ -1,4 +1,4 @@
-# QLC+ 5.2.2, copied from the pending nixpkgs update
+# QLC+ 5.3.0, based on the pending nixpkgs update
 # (https://github.com/NixOS/nixpkgs/pull/553412) -- the pinned nixpkgs still
 # has 5.0.0. Drop everything here but `patches` once that PR lands, and turn
 # this into an overrideAttrs on pkgs.qlcplus.
@@ -22,13 +22,13 @@
 
 stdenv.mkDerivation rec {
   pname = "qlcplus";
-  version = "5.2.2";
+  version = "5.3.0";
 
   src = fetchFromGitHub {
     owner = "mcallegari";
     repo = "qlcplus";
     rev = "QLC+_${version}";
-    hash = "sha256-e8KyuCnzTUz/f6cfT7LyUQ9snaFBnE5WTc4FP7jhdRY=";
+    hash = "sha256-55Jy4t60Lc6YOGko6fW/pUjS5uAiNhVDn4bm8LBWkzI=";
   };
 
   # OS2L feedback, so VirtualDJ can light its os2l_button pads; see
@@ -80,6 +80,13 @@ stdenv.mkDerivation rec {
     # prefix so everything installs directly under $out in the conventional
     # FHS-style layout instead of $out/usr.
     substituteInPlace variables.cmake --replace-fail 'set(INSTALLROOT "/usr")' 'set(INSTALLROOT "")'
+
+    # Since 5.3.0, QLC+ discards any CMAKE_INSTALL_LIBDIR it is given and
+    # recomputes it with GNUInstallDirs, which picks "lib64" here. The
+    # binary's RUNPATH is then shrunk before fixup moves lib64 into lib, so
+    # it loses $out/lib and cannot find libqlcplusengine5.so. Install the
+    # libraries straight into lib instead.
+    substituteInPlace variables.cmake --replace-fail 'set(LIBSDIR "''${CMAKE_INSTALL_LIBDIR}")' 'set(LIBSDIR "lib")'
   '';
 
   cmakeFlags = [
@@ -89,12 +96,6 @@ stdenv.mkDerivation rec {
     # (and to a few paths that don't use INSTALLROOT, like the udev rules
     # directory) to form the actual installation prefix.
     (lib.cmakeFeature "INSTALL_ROOT" (placeholder "out"))
-    # nixpkgs' cmake setup-hook forces CMAKE_INSTALL_LIBDIR to the absolute
-    # path "$out/lib". QLC+ then prepends INSTALLROOT (i.e. $out again, see
-    # above) to it, resulting in a doubled-up, nested install path. Reset it
-    # back to a plain relative directory so it composes correctly with
-    # INSTALLROOT instead.
-    (lib.cmakeFeature "CMAKE_INSTALL_LIBDIR" "lib")
   ];
 
   enableParallelBuilding = true;
