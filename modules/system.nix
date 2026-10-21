@@ -149,6 +149,20 @@
         patches = [];
       });
     })
+
+    # flask-swagger-ui 5.32.14 (pulled in by LibreTranslate) dropped setup.py in favour of
+    # pyproject.toml, but the nixpkgs recipe still builds it with format = "setuptools".
+    (final: prev: {
+      pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+        (pyFinal: pyPrev: {
+          flask-swagger-ui = pyPrev.flask-swagger-ui.overridePythonAttrs (oldAttrs: {
+            format = null;
+            pyproject = true;
+            build-system = [ pyFinal.setuptools ];
+          });
+        })
+      ];
+    })
   ];
 
   # List packages installed in system profile. To search, run:
