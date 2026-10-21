@@ -47,6 +47,16 @@
   # networking.interfaces.enp0s31f6.useDHCP = lib.mkDefault true;
   # networking.interfaces.wlp0s20f3.useDHCP = lib.mkDefault true;
 
+  # Cap concurrent compilers at 3 builds x 8 jobs = 24, about the 22 threads of
+  # the Core Ultra 7 155H. The defaults (max-jobs = auto, cores = 0) gave
+  # 22 x 22: after a flake update, several uncached packages compiled at
+  # once with ~86 cc1plus processes, exhausting the 30 GiB of RAM (no swap).
+  # The OOM killer then kicked in.
+  nix.settings = {
+    max-jobs = 3;
+    cores = 8;
+  };
+
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
   hardware.cpu.intel.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
 
