@@ -24,7 +24,15 @@
 # 140 BPM reads as anything from 136 to 143. ./os2l-bpm.patch uses the "bpm"
 # VirtualDJ sends with each beat instead, rounded to a whole number (QLC+
 # keeps it as one); the beats themselves still advance beat-tempo functions.
+#
+# QLC+ drives USB DMX adapters (FTDI and others) through libftdi/libusb on the
+# raw /dev/bus/usb node, not /dev/ttyUSB*, so the dialout group is not enough:
+# the udev rules the package ships open those nodes up to all users.
 { pkgs, ... }:
+let
+  qlcplus = pkgs.callPackage ./package.nix { };
+in
 {
-  environment.systemPackages = [ (pkgs.callPackage ./package.nix { }) ];
+  environment.systemPackages = [ qlcplus ];
+  services.udev.packages = [ qlcplus ];
 }
