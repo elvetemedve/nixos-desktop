@@ -1,0 +1,10 @@
+--- a/plugins/dmxusb/src/enttecdmxusbpro.cpp
++++ b/plugins/dmxusb/src/enttecdmxusbpro.cpp
+@@ -612,6 +612,7 @@
+         if (bytesRead != 4)
+         {
+             qWarning() << Q_FUNC_INFO << name() << "gave malformed serial reply - length:" << bytesRead;
++            iface()->close();
+             return result;
+         }
+ 

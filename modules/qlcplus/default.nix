@@ -28,6 +28,14 @@
 # QLC+ drives USB DMX adapters (FTDI and others) through libftdi/libusb on the
 # raw /dev/bus/usb node, not /dev/ttyUSB*, so the dialout group is not enough:
 # the udev rules the package ships open those nodes up to all users.
+#
+# A "Pro RX/TX" adapter that does not answer the Enttec serial number request
+# (the Eurolite USB-DMX512 Pro, which must be forced to that type) was left
+# open by the failed request, so opening its output skipped the line setup and
+# QLC+ sent at libftdi's default 9600 baud instead of 250000: nothing reacted,
+# and "DMX output is running late!" filled the log. It only worked once the
+# output was unpatched and patched again. ./dmxusb-pro-serial-close.patch
+# closes the adapter after the failed request too.
 { pkgs, ... }:
 let
   qlcplus = pkgs.callPackage ./package.nix { };

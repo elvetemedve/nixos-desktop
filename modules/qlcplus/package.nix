@@ -31,11 +31,13 @@ stdenv.mkDerivation rec {
     hash = "sha256-55Jy4t60Lc6YOGko6fW/pUjS5uAiNhVDn4bm8LBWkzI=";
   };
 
-  # OS2L feedback, so VirtualDJ can light its os2l_button pads; see
+  # OS2L feedback, so VirtualDJ can light its os2l_button pads, and a fix
+  # for Enttec Pro clones such as the Eurolite USB-DMX512 Pro; see
   # ./default.nix.
   patches = [
     ./os2l-feedback.patch
     ./os2l-bpm.patch
+    ./dmxusb-pro-serial-close.patch
   ];
 
   nativeBuildInputs = [
