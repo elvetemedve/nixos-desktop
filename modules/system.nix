@@ -60,8 +60,16 @@
     wantedBy = [ "multi-user.target" ];
     path = [ pkgs.flatpak ];
     script = ''
+      # Skip the network fetch entirely when the remote is already registered.
+      flatpak remotes --system --columns=name | grep -qx flathub && exit 0
       flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
     '';
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      Restart = "on-failure";
+      RestartSec = "30s";
+    };
   };
 
   # Install fwup daemon and user space client, for managing device firmware updates.
