@@ -48,22 +48,30 @@
             params.keep = "2";
           };
         };
-      } // lib.attrsets.optionalAttrs (builtins.hasAttr "/mnt/music" osConfig.fileSystems) { # Apply the following settings where /mnt/music is a mount point
-        "/mnt/music/albums" = {
+      } // lib.attrsets.optionalAttrs (builtins.hasAttr "external-ssd" osConfig.systemd.services) { # Apply the following settings where the external SSD is set up (modules/external-ssd.nix)
+        "/run/media/${username}/ExternalSSD/albums" = {
           id = "music-albums-for-djing";
-          ignorePerms = true; # Do not sync file permissions as FAT does not support it
+          ignorePerms = true; # Do not sync file permissions as exFAT does not support it
           devices = [ "home-server" ];
           label = "Music albums for DJing";
           rescanIntervalS = 86400; # The rescan interval, in seconds
           type = "receiveonly"; # Local file change is not synced
         };
-        "/mnt/music/singles" = {
+        "/run/media/${username}/ExternalSSD/singles" = {
           id = "music-singles-for-djing";
-          ignorePerms = true; # Do not sync file permissions as FAT does not support it
+          ignorePerms = true; # Do not sync file permissions as exFAT does not support it
           devices = [ "home-server" ];
           label = "Music singles for DJing";
           rescanIntervalS = 86400; # The rescan interval, in seconds
           type = "receiveonly"; # Local file change is not synced
+        };
+        "/run/media/${username}/ExternalSSD/stems" = {
+          id = "virtualdj-stem-files";
+          ignorePerms = true; # Do not sync file permissions as exFAT does not support it
+          devices = [ "home-server" ];
+          label = "VirtualDJ Stem Files";
+          rescanIntervalS = 86400; # The rescan interval, in seconds
+          type = "sendreceive";
         };
       };
 
