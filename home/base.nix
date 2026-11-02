@@ -24,5 +24,8 @@
 
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
+
+  # Allow overwriting the file "~/.config/mimeapps.list"
+  xdg.configFile."mimeapps.list".force = true;
 }
 
