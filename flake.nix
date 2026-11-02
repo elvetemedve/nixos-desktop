@@ -72,13 +72,13 @@
       };
 
 
-      "ThinkPadT580" = let
+      "ThinkPadX9-15" = let
         username = "geza";
-        specialArgs = { inherit username; };
+        specialArgs = { inherit username inputs; };
       in
         nixpkgs.lib.nixosSystem {
         modules = [
-          ./hosts/ThinkPadT580
+          ./hosts/ThinkPadX9-15
 
           home-manager.nixosModules.home-manager
           {
