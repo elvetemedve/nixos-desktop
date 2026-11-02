@@ -138,26 +138,7 @@
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
-  # Install KeePassXC 2.8.0 pre-release/development version
   nixpkgs.overlays = [
-    (final: prev: {
-      keepassxc = prev.keepassxc.overrideAttrs (oldAttrs: {
-        src = prev.fetchFromGitHub {
-          owner = "keepassxreboot";
-          repo = "keepassxc";
-          rev = "703855bec3bbe5d2d3e8efc3a5c80a8a33bdb5ce";  # specific commit or branch name
-          hash = "sha256-NO1oX1YiO7eb8xXcnl14t7xinngnMflQeTc4rge1pnI=";
-        };
-        version = "git-unstable";
-
-        # Add keyutils to build inputs
-        buildInputs = oldAttrs.buildInputs ++ [ prev.keyutils ];
-
-        # Disable patches created for KeePassXC 2.7.x code
-        patches = [];
-      });
-    })
-
     # flask-swagger-ui 5.32.14 (pulled in by LibreTranslate) dropped setup.py in favour of
     # pyproject.toml, but the nixpkgs recipe still builds it with format = "setuptools".
     (final: prev: {
