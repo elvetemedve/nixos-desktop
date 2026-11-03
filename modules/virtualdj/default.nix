@@ -44,6 +44,14 @@ let
     text = ''
       export WINEPREFIX=${prefix}
 
+      # D: is the external SSD's udisks mount point. Wine does not create
+      # this mapping, so a freshly built prefix lacks it; without it the
+      # guard below always fires and HomeFolder (D:\VirtualDJ) cannot
+      # resolve. The link dangles while the SSD is unplugged, which is what
+      # the guard expects. -n so an existing link is replaced, not followed.
+      mkdir -p "${prefix}/dosdevices"
+      ln -sfn /run/media/${username}/ExternalSSD "${prefix}/dosdevices/d:"
+
       # The database, playlists, mappers and settings live on the external
       # SSD (D:\VirtualDJ, pinned by homefolder.reg). With the SSD
       # missing VirtualDJ does not stop -- it falls back to a real and
