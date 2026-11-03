@@ -1,6 +1,7 @@
 # Runs VirtualDJ in a dedicated Wine prefix using the wine-vdj flake's
-# patched Wine and PipeASIO. VirtualDJ itself is installed into the prefix by
-# hand; everything it needs around that -- the PipeASIO driver registration,
+# patched Wine and PipeASIO. VirtualDJ itself is installed into the prefix
+# from its official .msi with `virtualdj-install <file.msi>`; everything it
+# needs around that -- the PipeASIO driver registration,
 # the DDJ-FLX10 driver-name alias, the display DPI -- is applied on each
 # start, so the prefix can be rebuilt from scratch without manual setup.
 { pkgs, inputs, username, ... }:
@@ -247,6 +248,78 @@ Start VirtualDJ anyway?"; then
     '';
   };
 
+  # Installs (or reinstalls/updates) VirtualDJ from the official .msi into the
+  # same prefix, with the same patched Wine as the launcher -- so the right
+  # WINEPREFIX and Wine never have to be remembered by hand, and a
+  # from-scratch prefix works too. Only the install itself happens here; the
+  # PipeASIO registration and .reg imports are applied by `virtualdj` on its
+  # next start.
+  #
+  #   virtualdj-install ~/Downloads/install_virtualdj_*.msi
+  #   virtualdj-install --quiet file.msi   # unattended, no installer UI
+  virtualdj-install = pkgs.writeShellApplication {
+    name = "virtualdj-install";
+    runtimeInputs = [ pkgs.coreutils pkgs.procps ];
+    text = ''
+      usage() {
+        echo "usage: virtualdj-install [--quiet] <install_virtualdj.msi>" >&2
+        exit 1
+      }
+
+      quiet=""
+      if [ "''${1:-}" = "--quiet" ]; then
+        quiet=1
+        shift
+      fi
+      [ "$#" -eq 1 ] || usage
+      if [ ! -f "$1" ] || [ ! -r "$1" ]; then
+        echo "virtualdj-install: not a readable file: $1" >&2
+        exit 1
+      fi
+      # Absolute, so it resolves the same whatever Wine's working directory.
+      msi=$(realpath "$1")
+
+      export WINEPREFIX=${prefix}
+
+      # The wineserver -k below would take a running VirtualDJ down with it,
+      # and the installer cannot replace a running virtualdj.exe anyway.
+      if pgrep -f 'virtualdj\.exe' >/dev/null; then
+        echo "virtualdj-install: VirtualDJ is running; close it first." >&2
+        exit 1
+      fi
+
+      # Same reason as in `virtualdj`: a wineserver from a previous wine-vdj
+      # build would serve the prefix with stale binaries.
+      "${wineVdj}/bin/wineserver" -k || true
+
+      # The MSI's shortcuts would make winemenubuilder write a second desktop
+      # entry, file associations and hash-named icons under ~/.local/share,
+      # duplicating the desktop entry and icon this module already provides.
+      export WINEDLLOVERRIDES="winemenubuilder.exe=d"
+
+      # Creates the prefix if it does not exist yet, or updates it to this
+      # Wine, before msiexec needs it.
+      "${wineVdj}/bin/wineboot" -u
+
+      if [ -n "$quiet" ]; then
+        "${wineVdj}/bin/wine" msiexec /i "$msi" /qn
+      else
+        "${wineVdj}/bin/wine" msiexec /i "$msi"
+      fi
+
+      # msiexec can hand work to child processes that outlive it; wait for
+      # the prefix to go idle before checking the result.
+      "${wineVdj}/bin/wineserver" -w
+
+      exe="${prefix}/drive_c/Program Files/VirtualDJ/virtualdj.exe"
+      if [ ! -f "$exe" ]; then
+        echo "virtualdj-install: install did not produce $exe" >&2
+        exit 1
+      fi
+      echo "VirtualDJ installed. Start it with: virtualdj"
+    '';
+  };
+
   # VirtualDJ's own icon, as winemenubuilder extracted it from virtualdj.exe
   # when the MSI ran. Carried here rather than pointed at in
   # ~/.local/share/icons, because that copy is user state: it is named after
@@ -305,5 +378,5 @@ in
   # directly.
   fonts.packages = [ pkgs.corefonts pkgs.pretendard pkgs.noto-fonts-cjk-sans-static ];
 
-  environment.systemPackages = [ virtualdj virtualdj-regedit desktopItem virtualdjIcon ];
+  environment.systemPackages = [ virtualdj virtualdj-regedit virtualdj-install desktopItem virtualdjIcon ];
 }
