@@ -121,9 +121,11 @@
       set fish_greeting # Disable greeting
 
       # Tide prompt configuration (declarative; see tide.fish)
+      # Universal on purpose: Tide renders the prompt in a background `fish -c`
+      # child that only sees universal/exported variables, not global ones.
       ${builtins.readFile ./tide.fish}
-      set --global _tide_left_items $tide_left_prompt_items
-      set --global _tide_right_items $tide_right_prompt_items
+      set --universal _tide_left_items $tide_left_prompt_items
+      set --universal _tide_right_items $tide_right_prompt_items
 
       # Display system info
       ${pkgs.fastfetch}/bin/fastfetch
