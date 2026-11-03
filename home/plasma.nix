@@ -10,6 +10,9 @@
     shortcuts = {
       # Layout switching: us <-> hu
       "KDE Keyboard Layout Switcher"."Switch to Next Keyboard Layout" = "Meta+Space";
+
+      # Free Alt+Space (KRunner default) for Vicinae, keep Alt+F2
+      "services/org.kde.krunner.desktop"._launch = "Alt+F2";
     };
 
     # Keyboard layouts, first one is the default (switch with Meta+Space)
