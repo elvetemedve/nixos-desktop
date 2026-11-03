@@ -30,5 +30,8 @@
   ];
 
   networking.hostName = "ThinkPadX9-15"; # Define your hostname.
+
+  # Synaptics 06cb:019d fingerprint reader, supported natively by libfprint
+  services.fprintd.enable = true;
 }
 
