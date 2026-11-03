@@ -1,4 +1,4 @@
-{ pkgs, vicinae, ... }:
+{ pkgs, vicinae, plasma-manager, ... }:
 
 {
   imports = [
@@ -9,6 +9,7 @@
     ../../home/editor.nix
     ../../home/gnome.nix
     ../../home/messaging.nix
+    ../../home/plasma.nix
     ../../home/secret.nix
     ../../home/shell.nix
     ../../home/storage.nix
@@ -17,6 +18,7 @@
     ../../home/video.nix
     ../../home/virtualdj.nix
     vicinae.homeManagerModules.default
+    plasma-manager.homeModules.plasma-manager
   ];
 
   programs.git = {
