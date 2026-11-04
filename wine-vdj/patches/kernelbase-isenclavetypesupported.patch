@@ -1,0 +1,47 @@
+--- a/dlls/kernel32/kernel32.spec
++++ b/dlls/kernel32/kernel32.spec
+@@ -1009,6 +1009,7 @@
+ @ stdcall -import IsDBCSLeadByte(long)
+ @ stdcall -import IsDBCSLeadByteEx(long long)
+ @ stdcall -import IsDebuggerPresent()
++@ stdcall -import IsEnclaveTypeSupported(long)
+ @ stub -i386 IsLSCallback
+ @ stdcall -import IsNLSDefinedString(long long ptr wstr long)
+ @ stdcall -import IsNormalizedString(long wstr long)
+--- a/dlls/kernelbase/kernelbase.spec
++++ b/dlls/kernelbase/kernelbase.spec
+@@ -901,7 +901,7 @@
+ @ stdcall IsDebuggerPresent()
+ # @ stub IsDeveloperModeEnabled
+ # @ stub IsDeveloperModePolicyApplied
+-# @ stub IsEnclaveTypeSupported
++@ stdcall IsEnclaveTypeSupported(long)
+ # @ stub IsGlobalizationUserSettingsKeyRedirected
+ @ stdcall IsInternetESCEnabled()
+ @ stdcall IsNLSDefinedString(long long ptr wstr long)
+--- a/dlls/kernelbase/memory.c
++++ b/dlls/kernelbase/memory.c
+@@ -1917,3 +1917,13 @@
+ 
+     return get_firmware_table( provider, SystemFirmwareTable_Get, id, buffer, size );
+ }
++
++/***********************************************************************
++ *             IsEnclaveTypeSupported   (kernelbase.@)
++ */
++BOOL WINAPI IsEnclaveTypeSupported( DWORD type )
++{
++    TRACE_(virtual)( "(%#lx)\n", type );
++    SetLastError( ERROR_NOT_SUPPORTED );
++    return FALSE;
++}
+--- a/include/winbase.h
++++ b/include/winbase.h
+@@ -2026,6 +2026,7 @@
+ #define                       IsBadStringPtr WINELIB_NAME_AW(IsBadStringPtr)
+ WINBASEAPI BOOL        WINAPI IsBadWritePtr(LPVOID,UINT_PTR);
+ WINBASEAPI BOOL        WINAPI IsDebuggerPresent(void);
++WINBASEAPI BOOL        WINAPI IsEnclaveTypeSupported(DWORD);
+ WINBASEAPI BOOL        WINAPI IsSystemResumeAutomatic(void);
+ WINADVAPI  BOOL        WINAPI IsTextUnicode(LPCVOID,INT,LPINT);
+ WINADVAPI  BOOL        WINAPI IsTokenRestricted(HANDLE);

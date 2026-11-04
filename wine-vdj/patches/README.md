@@ -1,6 +1,6 @@
 # Patches
 
-Six local patches plus one carried from wine-staging. All apply cleanly with
+Seven local patches plus one carried from wine-staging. All apply cleanly with
 `patch -p1` against the pinned `wine-src` (currently Wine 11.20).
 
 - `winealsa-midi-deviceinterface.patch` — `dlls/winealsa.drv/alsamidi.c`.
@@ -70,6 +70,21 @@ Six local patches plus one carried from wine-staging. All apply cleanly with
   `ES_SYSTEM_REQUIRED` alone takes no lock (logind's nearest match would
   also refuse user-initiated suspend), and one-shot calls without
   `ES_CONTINUOUS` are not forwarded. Not filed upstream yet.
+
+- `kernelbase-isenclavetypesupported.patch` — `dlls/kernelbase/memory.c`,
+  `dlls/kernelbase/kernelbase.spec`, `dlls/kernel32/kernel32.spec`,
+  `include/winbase.h`. Exports `IsEnclaveTypeSupported` from kernelbase (and
+  kernel32, forwarding to it), always answering FALSE with
+  `ERROR_NOT_SUPPORTED`, which is what Windows says on a machine without VBS
+  and the true answer under Wine. Wine lists the function only as a
+  commented-out stub, so it is missing from the exports entirely, and the
+  loader binds the import to a thunk that raises `EXCEPTION_WINE_STUB`
+  (0x80000100) when called. VirtualDJ 8.5.9729 calls
+  `IsEnclaveTypeSupported(ENCLAVE_TYPE_VBS)` on every start, to fill a
+  `vbs=yes|no` tag in the settings summary it builds next to `eqMode=`,
+  `stemsMode=` and `stemsFix=`, so without this it crashes within seconds of
+  launch, and its crash guard relaunches it in a loop. Still a stub in Wine
+  11.21. Not filed upstream yet.
 
 Delete a patch from `flake.nix`'s `patches` list once its fix lands in
 upstream Wine and the pinned `wine-src` moves past it.
