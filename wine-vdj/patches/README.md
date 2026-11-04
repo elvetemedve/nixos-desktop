@@ -1,7 +1,7 @@
 # Patches
 
 Seven local patches plus one carried from wine-staging. All apply cleanly with
-`patch -p1` against the pinned `wine-src` (currently Wine 11.20).
+`patch -p1` against the pinned `wine-src` (currently Wine 11.21).
 
 - `winealsa-midi-deviceinterface.patch` — `dlls/winealsa.drv/alsamidi.c`.
   Derives USB vid/pid/interface-number from the ALSA sequencer client and

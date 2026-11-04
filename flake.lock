@@ -339,16 +339,16 @@
     "wine-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1792177739,
-        "narHash": "sha256-FV9Ey13Q3H3j4snyiUcVsmJxdk6i7Nyfb8hVAJ4GX/o=",
+        "lastModified": 1793393551,
+        "narHash": "sha256-kgcx5xSM9IFk7aSibePch0/YC8YNiWRPyGSL9mwKU4Y=",
         "owner": "wine-mirror",
         "repo": "wine",
-        "rev": "7298a818b79446bae153b8d5aa27235ab3703bf9",
+        "rev": "2528aff26208257fdbf980666a4f0e66d47563ce",
         "type": "github"
       },
       "original": {
         "owner": "wine-mirror",
-        "ref": "wine-11.20",
+        "ref": "wine-11.21",
         "repo": "wine",
         "type": "github"
       }
