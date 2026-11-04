@@ -168,6 +168,7 @@
     lshw # Display hardware information report
     mcp-nixos # Real, up-to-the-second information about NixOS packages, options, Home Manager, nix-darwin, flakes, and friends.
     net-tools # Install netstat
+    nvtopPackages.full # GPU monitor with per-process usage, for Intel (i915 and xe), NVIDIA and AMD GPUs.
     nodejs
     pnpm
 
