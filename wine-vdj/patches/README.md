@@ -1,16 +1,7 @@
 # Patches
 
-Seven local patches plus one carried from wine-staging. All apply cleanly with
+Six local patches plus one carried from wine-staging. All apply cleanly with
 `patch -p1` against the pinned `wine-src` (currently Wine 11.20).
-
-All but one go into `wine-base`, the full Wine build. The exception is
-`winewayland-smooth-scroll.patch`, listed in `winewaylandPatches` in
-`flake.nix`: it touches only `winewayland.so`, so it is applied on top of
-`wine-base`'s patches in a build of that one module (`winewayland`), which
-`wine-base-patched` then swaps into `wine-base`'s tree. Changing it costs a
-few minutes of building rather than a full Wine rebuild. A future patch that
-also stays inside `dlls/winewayland.drv/`'s unix side can join that list;
-anything else belongs in `wine-base`'s.
 
 - `winealsa-midi-deviceinterface.patch` — `dlls/winealsa.drv/alsamidi.c`.
   Derives USB vid/pid/interface-number from the ALSA sequencer client and
@@ -80,17 +71,5 @@ anything else belongs in `wine-base`'s.
   also refuse user-initiated suspend), and one-shot calls without
   `ES_CONTINUOUS` are not forwarded. Not filed upstream yet.
 
-- `winewayland-smooth-scroll.patch` — `dlls/winewayland.drv/wayland_pointer.c`.
-  Turns smooth `wl_pointer.axis` scrolling into `WM_MOUSEWHEEL`/`WM_MOUSEHWHEEL`
-  notches. Stock Wine's Wayland driver only forwards wheel notches
-  (`axis_value120`/`axis_discrete`) and leaves the `axis` handler empty, so
-  touchpad two-finger scrolling, which has no notches, reaches no window at
-  all. Distance is sent in whole notches at Xwayland's scale (10 units per
-  notch), so it scrolls as far as under the X11 driver; the remainder carries
-  over between events and is dropped on `axis_stop` (fingers lifted). A
-  mouse wheel's own `axis` events are skipped, since its notch event in the
-  same frame has already been sent. Only matters when VirtualDJ runs on the
-  Wayland driver. Not filed upstream yet.
-
-Delete a patch from `flake.nix`'s `patches` list (or `winewaylandPatches`)
-once its fix lands in upstream Wine and the pinned `wine-src` moves past it.
+Delete a patch from `flake.nix`'s `patches` list once its fix lands in
+upstream Wine and the pinned `wine-src` moves past it.
