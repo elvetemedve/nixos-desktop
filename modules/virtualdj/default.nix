@@ -143,6 +143,20 @@ Start VirtualDJ anyway?"; then
       # err and warn still shows.
       export WINEDEBUG=fixme-dxgi,fixme-d2d,fixme-win,fixme-vkd3d,fixme-crypt
 
+      # Run on Wine's Wayland driver rather than through XWayland. Wine
+      # tries its X11 driver first and falls back to the Wayland one, so
+      # taking DISPLAY away is what selects it; nothing in the prefix needs
+      # to change, and X11 remains the fallback outside a Wayland session.
+      # The driver is only usable for VirtualDJ with the winewayland
+      # patches in the wine-vdj flake; what was tested and what is still
+      # open is in wine-vdj/patches/WAYLAND-GAPS.md. To go back to X11 for
+      # one run, start it with WAYLAND_DISPLAY unset:
+      #   env -u WAYLAND_DISPLAY virtualdj
+      # Below the SSD guard on purpose: that zenity prompt may use DISPLAY.
+      if [ -n "''${WAYLAND_DISPLAY:-}" ]; then
+        unset DISPLAY
+      fi
+
       # Split the two graphics APIs across the two GPUs. VirtualDJ's skin is
       # D3D11, which wined3d draws through OpenGL; its GPU stem separation is
       # DirectML on D3D12, which vkd3d runs through Vulkan. Sending both to the
