@@ -1,0 +1,32 @@
+--- a/dlls/winewayland.drv/wayland_surface.c
++++ b/dlls/winewayland.drv/wayland_surface.c
+@@ -886,7 +886,15 @@
+ BOOL wayland_surface_reconfigure(struct wayland_surface *surface)
+ {
+     struct wayland_window_config *window = &surface->window;
+-    RECT rect = map_rect_to_surface(surface, surface->window.rect);
++    RECT rect = surface->window.rect;
++
++    /* Only the size matters from here on. Map it from the origin: each edge
++     * is rounded on its own, so with a fractional scale the mapped size
++     * would otherwise change with the window's position, and come out a
++     * pixel off the size of the client surface, which is mapped from the
++     * origin. */
++    OffsetRect(&rect, -rect.left, -rect.top);
++    rect = map_rect_to_surface(surface, rect);
+ 
+     TRACE("hwnd=%p window=%s,%#x processing=%s,%#x current=%s,%#x\n",
+           surface->hwnd, wine_dbgstr_rect(&rect), window->state,
+--- a/dlls/winewayland.drv/window.c
++++ b/dlls/winewayland.drv/window.c
+@@ -661,7 +661,9 @@
+         flags |= SWP_FRAMECHANGED;
+     }
+ 
+-    surface_rect = map_rect_to_surface(surface, surface->window.rect);
++    surface_rect = surface->window.rect;
++    OffsetRect(&surface_rect, -surface_rect.left, -surface_rect.top);
++    surface_rect = map_rect_to_surface(surface, surface_rect);
+ 
+     /* If the window is already fullscreen and its size is compatible with what
+      * the compositor is requesting, don't force a resize, since some applications

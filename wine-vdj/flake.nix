@@ -16,6 +16,13 @@
     kernel32's IsEnclaveTypeSupported, answering "not supported", which
     VirtualDJ 8.5.9729+ calls on every start and which otherwise crashes it
     on Wine's missing-import stub.
+    Eight more patches, for the Wayland driver (touchpad scrolling and
+    pinch, windows the application drags by itself, size rounding at
+    fractional scales, popup placement, swaps on hidden windows, and
+    owned-window positions and stacking), are built into winewayland.so alone, and one,
+    implementing IDXGIOutput::WaitForVBlank so VirtualDJ's frame limiter
+    works, into dxgi.dll alone. Both are swapped into the full build, so
+    they do not need a full Wine rebuild of their own.
     PipeASIO (https://github.com/M0n7y5/pipeasio) provides a low-latency
     ASIO-to-PipeWire audio driver, built here against this same Wine so its
     winelib PE/unix split stays ABI-consistent with it.
@@ -78,6 +85,137 @@
         ];
       });
 
+      # Patches that touch only winewayland.so, the Wayland driver's unix
+      # half. They are kept out of wine-base's list so that adding or
+      # changing one rebuilds that single module rather than all of Wine;
+      # wine-base-patched below swaps the result in.
+      winewaylandPatches = [
+        ./patches/winewayland-smooth-scroll.patch
+        ./patches/winewayland-app-move.patch
+        ./patches/winewayland-fractional-size.patch
+        ./patches/winewayland-placed-popups.patch
+        ./patches/winewayland-pinch-to-wheel.patch
+        ./patches/winewayland-swap-frame-timeout.patch
+        ./patches/winewayland-subsurface-pointer.patch
+        ./patches/winewayland-subsurface-stacking.patch
+      ];
+
+      # winewayland.so alone, from wine-base's own source, patches,
+      # dependencies and configure flags, plus winewaylandPatches. make is
+      # asked for that one target, and the two unix libraries it links
+      # against, ntdll.so and win32u.so, are copied in from wine-base and
+      # marked up to date (-o) so make does not rebuild them from source.
+      # Configure plus this one target take a few minutes, not the hour or
+      # so of a full build.
+      winewayland = wine-base.overrideAttrs (old: {
+        name = "winewayland-${wineVersion}";
+        patches = old.patches ++ winewaylandPatches;
+
+        buildPhase = ''
+          runHook preBuild
+          cp ${wine-base}/lib/wine/x86_64-unix/ntdll.so dlls/ntdll/ntdll.so
+          cp ${wine-base}/lib/wine/x86_64-unix/win32u.so dlls/win32u/win32u.so
+          make -j$NIX_BUILD_CORES \
+            -o dlls/ntdll/ntdll.so -o dlls/win32u/win32u.so \
+            dlls/winewayland.drv/winewayland.so
+          runHook postBuild
+        '';
+
+        installPhase = ''
+          runHook preInstall
+          install -Dm755 dlls/winewayland.drv/winewayland.so \
+            $out/lib/wine/x86_64-unix/winewayland.so
+          runHook postInstall
+        '';
+
+        # nixpkgs' postInstall wraps bin/wine and links Gecko and Mono,
+        # none of which this output has.
+        postInstall = "";
+      });
+
+      # The same arrangement for dxgi.dll, a PE module: make builds that one
+      # DLL, and the import libraries it links against on the way.
+      dxgiPatches = [
+        ./patches/dxgi-output-waitforvblank.patch
+      ];
+
+      dxgi = wine-base.overrideAttrs (old: {
+        name = "wine-dxgi-${wineVersion}";
+        patches = old.patches ++ dxgiPatches;
+
+        buildPhase = ''
+          runHook preBuild
+          make -j$NIX_BUILD_CORES dlls/dxgi/x86_64-windows/dxgi.dll
+          runHook postBuild
+        '';
+
+        installPhase = ''
+          runHook preInstall
+          install -Dm644 dlls/dxgi/x86_64-windows/dxgi.dll \
+            $out/lib/wine/x86_64-windows/dxgi.dll
+          runHook postInstall
+        '';
+
+        postInstall = "";
+      });
+
+      # wine-base with winewayland.so and dxgi.dll replaced by the ones
+      # built above.
+      #
+      # A symlink tree rather than a copy, except where Wine works out its
+      # own location: the loader from /proc/self/exe and ntdll.so from the
+      # realpath of itself, which together decide the directory every
+      # driver loads from. Left as symlinks they would resolve back into
+      # wine-base, and Wine would load wine-base's own winewayland.so. That
+      # covers both loaders, bin/.wine and lib/wine/x86_64-unix/wine, and
+      # wine-preloader, which ntdll.so re-executes the process through, so
+      # that /proc/self/exe is the preloader from then on.
+      #
+      # bin/wine is nixpkgs' compiled wrapper, with wine-base's store path
+      # built into it (WINELOADER, and the loader it runs). Sharing
+      # wine-base's derivation name keeps $out exactly as long as that path,
+      # so swapping one for the other leaves the binary intact.
+      wine-base-patched = pkgs.runCommand wine-base.name { } ''
+        base=${wine-base}
+        if [ "''${#out}" -ne "''${#base}" ]; then
+          echo "store path lengths differ: $out vs $base" >&2
+          exit 1
+        fi
+
+        cp -rs --no-preserve=mode "$base" "$out"
+
+        # cp -rs points every link at wine-base's own entry, so links like
+        # bin/regedit -> wine would land on wine-base's wrapper. Recreate
+        # wine-base's relative links as they are, to stay inside $out.
+        (cd "$base" && find . -type l) | while read -r link; do
+          target=$(readlink "$base/$link")
+          case "$target" in
+            /*) ;;
+            *) ln -sfn "$target" "$out/$link" ;;
+          esac
+        done
+
+        for f in bin/.wine bin/wine lib/wine/x86_64-unix/wine \
+                 lib/wine/x86_64-unix/wine-preloader lib/wine/x86_64-unix/ntdll.so; do
+          rm "$out/$f"
+          cp "$base/$f" "$out/$f"
+          chmod u+w "$out/$f"
+        done
+        sed -i "s|$base|$out|g" "$out/bin/wine"
+        if grep -q "$base" "$out/bin/wine"; then
+          echo "bin/wine still names $base" >&2
+          exit 1
+        fi
+
+        rm "$out/lib/wine/x86_64-unix/winewayland.so"
+        cp ${winewayland}/lib/wine/x86_64-unix/winewayland.so \
+          "$out/lib/wine/x86_64-unix/winewayland.so"
+
+        rm "$out/lib/wine/x86_64-windows/dxgi.dll"
+        cp ${dxgi}/lib/wine/x86_64-windows/dxgi.dll \
+          "$out/lib/wine/x86_64-windows/dxgi.dll"
+      '';
+
       # Built against wine-base's own winegcc/winebuild/widl, so bumping
       # wine-base above forces a pipeasio rebuild automatically.
       pipeasio = pkgs.stdenv.mkDerivation {
@@ -106,9 +244,11 @@
     in
     {
       packages.${system} = {
-        inherit wine-base pipeasio;
+        inherit wine-base winewayland dxgi wine-base-patched pipeasio;
 
-        # Patched Wine with PipeASIO merged into its own lib/wine tree, with
+        # Patched Wine (wine-base-patched, which is wine-base with its
+        # rebuilt winewayland.so) with PipeASIO merged into its own lib/wine
+        # tree, with
         # every Wine entry point wrapped to put WINEDLLPATH on that tree.
         #
         # The wrapper is what makes PipeASIO loadable. nixpkgs' Wine wrapper
@@ -124,7 +264,7 @@
         # the PipeASIO install with no PIPEASIO_PREFIX set.
         default = pkgs.symlinkJoin {
           name = "wine-vdj";
-          paths = [ wine-base pipeasio ];
+          paths = [ wine-base-patched pipeasio ];
           nativeBuildInputs = [ pkgs.makeWrapper ];
           postBuild = ''
             # Every entry point needs its own wrapper, not just `wine`. Wine
@@ -132,9 +272,9 @@
             # bin/{wineboot,regedit,winepath,...} work as symlinks to bin/wine
             # -- and a `#!` wrapper cannot forward argv[0]: the kernel drops it
             # and bash resets $0 to the wrapper's own path. Each wrapper
-            # therefore targets the *same-named* path under wine-base, which is
-            # what keeps $0, and with it the program selection, intact.
-            for path in ${wine-base}/bin/*; do
+            # therefore targets the *same-named* path under wine-base-patched,
+            # which is what keeps $0, and with it the program selection, intact.
+            for path in ${wine-base-patched}/bin/*; do
               prog=$(basename "$path")
               target=$(readlink "$path" || echo "$prog")
               if [ "$prog" != wine ] && [ "$target" != wine ]; then continue; fi

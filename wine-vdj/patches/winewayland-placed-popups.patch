@@ -1,0 +1,109 @@
+--- a/dlls/winewayland.drv/window.c
++++ b/dlls/winewayland.drv/window.c
+@@ -315,6 +315,14 @@
+     wl_display_flush(process_wayland.wl_display);
+ }
+ 
++static BOOL wayland_win_data_exists(HWND hwnd)
++{
++    struct wayland_win_data *data = wayland_win_data_get(hwnd);
++    BOOL ret = data && data->wayland_surface;
++    if (data) wayland_win_data_release(data);
++    return ret;
++}
++
+ static BOOL is_managed(HWND hwnd)
+ {
+     struct wayland_win_data *data = wayland_win_data_get(hwnd);
+@@ -366,6 +374,69 @@
+ }
+ 
+ /***********************************************************************
++ *           is_placed_popup
++ *
++ * Whether a window is a bare popup, with no frame or title bar controls
++ * of its own: a menu, a dropdown, a panel the application puts at a
++ * position of its choosing.
++ */
++static BOOL is_placed_popup(HWND hwnd)
++{
++    DWORD style = NtUserGetWindowLongW(hwnd, GWL_STYLE);
++
++    if (!(style & WS_POPUP) || (style & WS_CHILD)) return FALSE;
++    if ((style & WS_CAPTION) == WS_CAPTION) return FALSE;
++    if (style & (WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) return FALSE;
++    if (NtUserGetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_APPWINDOW) return FALSE;
++    return TRUE;
++}
++
++/***********************************************************************
++ *           get_subsurface_owner
++ *
++ * The window that a window's surface is currently a subsurface of, if any.
++ */
++static HWND get_subsurface_owner(HWND hwnd)
++{
++    struct wayland_win_data *data;
++    struct wayland_surface *surface;
++    HWND owner = 0;
++
++    if (!(data = wayland_win_data_get(hwnd))) return 0;
++    if ((surface = data->wayland_surface) && surface->role == WAYLAND_SURFACE_ROLE_SUBSURFACE)
++        owner = surface->owner_hwnd;
++    wayland_win_data_release(data);
++    return owner;
++}
++
++/***********************************************************************
++ *           get_placed_popup_owner
++ *
++ * The window to place a popup relative to, if there is one.
++ *
++ * A Wayland toplevel cannot be positioned, so a popup that became one
++ * would show up wherever the compositor puts new windows, rather than
++ * where the application wants it. As a subsurface of one of our toplevels
++ * it can be placed exactly.
++ */
++static HWND get_placed_popup_owner(HWND hwnd, HWND owner_hint)
++{
++    HWND owner;
++
++    if (!is_placed_popup(hwnd)) return 0;
++
++    /* The owner, or failing that the window the popup is on top of. */
++    if ((owner = owner_hint) && owner != hwnd && wayland_win_data_exists(owner)) return owner;
++    /* The window we attached it to before. */
++    if ((owner = get_subsurface_owner(hwnd)) && wayland_win_data_exists(owner)) return owner;
++    /* The window the user is working in. */
++    if ((owner = NtUserGetForegroundWindow()) && (owner = NtUserGetAncestor(owner, GA_ROOT)) &&
++        owner != hwnd && wayland_win_data_exists(owner)) return owner;
++
++    return 0;
++}
++
++/***********************************************************************
+  *		is_window_managed
+  *
+  * Check if a given window should be managed
+@@ -521,13 +592,20 @@
+     BOOL managed, fullscreen = swp_flags & WINE_SWP_FULLSCREEN;
+     BOOL started_move = FALSE;
+     uint32_t button_serial = 0;
++    HWND popup_owner;
+ 
+     TRACE("hwnd %p new_rects %s after %p flags %08x\n", hwnd, debugstr_window_rects(new_rects), insert_after, swp_flags);
+ 
+     /* Get the managed state with win_data unlocked, as is_window_managed
+      * may need to query win_data information about other HWNDs and thus
+      * acquire the lock itself internally. */
+-    if (!(managed = is_window_managed(hwnd, swp_flags, fullscreen)) && surface) owner = owner_hint;
++    managed = is_window_managed(hwnd, swp_flags, fullscreen);
++    if (managed && surface && !fullscreen && (popup_owner = get_placed_popup_owner(hwnd, owner_hint)))
++    {
++        managed = FALSE;
++        owner_hint = popup_owner;
++    }
++    if (!managed && surface) owner = owner_hint;
+ 
+     /* Likewise the pointer state, which has its own lock. */
+     pthread_mutex_lock(&process_wayland.pointer.mutex);

@@ -1,0 +1,184 @@
+diff -ru a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
+--- a/dlls/winewayland.drv/waylanddrv.h	2026-11-12 23:05:32.697763234 +0100
++++ b/dlls/winewayland.drv/waylanddrv.h	2026-11-12 23:19:46.357653607 +0100
+@@ -73,6 +73,7 @@
+     WM_WAYLAND_CONFIGURE,
+     WM_WAYLAND_SET_FOREGROUND,
+     WM_WAYLAND_END_MOVE,
++    WM_WAYLAND_RAISE,
+ };
+ 
+ enum wayland_surface_config_state
+@@ -332,6 +333,10 @@
+      * compositor has last confirmed, once it has confirmed one */
+     BOOL placed;
+     POINT placed_origin;
++    /* for a subsurface, the stacking order is to be sent again, and the
++     * window of the same owner to put it right above, if there is one */
++    BOOL restack;
++    HWND above_hwnd;
+ };
+ 
+ /**********************************************************************
+diff -ru a/dlls/winewayland.drv/wayland_pointer.c b/dlls/winewayland.drv/wayland_pointer.c
+--- a/dlls/winewayland.drv/wayland_pointer.c	2026-11-12 23:05:32.697624838 +0100
++++ b/dlls/winewayland.drv/wayland_pointer.c	2026-11-12 23:19:46.357596093 +0100
+@@ -282,6 +282,10 @@
+ 
+     TRACE("hwnd=%p button=%#x state=%u\n", hwnd, button, state);
+ 
++    /* A click raises a window. The compositor does that for a toplevel;
++     * for a subsurface among the others of its owner it is up to us. */
++    if (state == WL_POINTER_BUTTON_STATE_PRESSED) NtUserPostMessage(hwnd, WM_WAYLAND_RAISE, 0, 0);
++
+     NtUserSendHardwareInput(hwnd, SEND_HWMSG_RAWINPUT, &input, 0);
+ }
+ 
+diff -ru a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayland_surface.c
+--- a/dlls/winewayland.drv/wayland_surface.c	2026-11-12 23:05:32.697686377 +0100
++++ b/dlls/winewayland.drv/wayland_surface.c	2026-11-12 23:19:46.357623729 +0100
+@@ -487,6 +487,7 @@
+     surface->role = WAYLAND_SURFACE_ROLE_SUBSURFACE;
+     surface->owner_hwnd = owner->hwnd;
+     surface->placed = FALSE;
++    surface->restack = TRUE;
+ 
+     /* Present contents independently of the owner surface. */
+     wl_subsurface_set_desync(surface->wl_subsurface);
+@@ -911,6 +912,30 @@
+ }
+ 
+ /**********************************************************************
++ *          wayland_surface_get_sibling_below
++ *
++ * The surface of the window that this subsurface goes right above, if
++ * that window is still a subsurface of the same owner.
++ */
++static struct wl_surface *wayland_surface_get_sibling_below(struct wayland_surface *surface)
++{
++    struct wayland_win_data *data;
++    struct wayland_surface *sibling;
++    struct wl_surface *wl_surface = NULL;
++
++    if (!surface->above_hwnd || surface->above_hwnd == surface->hwnd) return NULL;
++    if (!(data = wayland_win_data_get(surface->above_hwnd))) return NULL;
++
++    if ((sibling = data->wayland_surface) && sibling != surface &&
++        sibling->role == WAYLAND_SURFACE_ROLE_SUBSURFACE && sibling->wl_subsurface &&
++        sibling->owner_hwnd == surface->owner_hwnd)
++        wl_surface = sibling->wl_surface;
++
++    wayland_win_data_release(data);
++    return wl_surface;
++}
++
++/**********************************************************************
+  *          wayland_surface_place_subsurface
+  *
+  * Sends the subsurface's position to the compositor.
+@@ -937,10 +962,21 @@
+         TRACE("hwnd=%p rect=%s\n", surface->hwnd, wine_dbgstr_rect(&rect));
+ 
+         wl_subsurface_set_position(surface->wl_subsurface, rect.left, rect.top);
+-        if (owner_data->client_surface && owner_data->client_surface->wl_subsurface)
+-            wl_subsurface_place_above(surface->wl_subsurface, owner_data->client_surface->wl_surface);
+-        else
+-            wl_subsurface_place_above(surface->wl_subsurface, owner_surface->wl_surface);
++        if (surface->restack)
++        {
++            struct wl_surface *below = wayland_surface_get_sibling_below(surface);
++
++            /* Placing a subsurface above the owner puts it below every
++             * other subsurface of that owner, so this is only done when the
++             * order may have changed, not with every move. */
++            if (below)
++                wl_subsurface_place_above(surface->wl_subsurface, below);
++            else if (owner_data->client_surface && owner_data->client_surface->wl_subsurface)
++                wl_subsurface_place_above(surface->wl_subsurface, owner_data->client_surface->wl_surface);
++            else
++                wl_subsurface_place_above(surface->wl_subsurface, owner_surface->wl_surface);
++            surface->restack = FALSE;
++        }
+         wl_surface_commit(owner_surface->wl_surface);
+         wayland_surface_sync_subsurface_position(surface);
+     }
+diff -ru a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
+--- a/dlls/winewayland.drv/window.c	2026-11-12 23:05:32.697507458 +0100
++++ b/dlls/winewayland.drv/window.c	2026-11-12 23:19:46.357729694 +0100
+@@ -411,6 +411,26 @@
+ }
+ 
+ /***********************************************************************
++ *           get_subsurface_below
++ *
++ * The next window down in the z-order that is a subsurface of the given
++ * owner, if any.
++ *
++ * Subsurfaces of one owner are stacked among themselves, and Wayland
++ * leaves each where it was last put, so a window that is to be on top of
++ * its siblings, a menu opened from one of them for example, has to be put
++ * there.
++ */
++static HWND get_subsurface_below(HWND hwnd, HWND owner)
++{
++    unsigned int limit = 256;
++
++    while (limit-- && (hwnd = NtUserGetWindowRelative(hwnd, GW_HWNDNEXT)))
++        if (get_subsurface_owner(hwnd) == owner) return hwnd;
++    return 0;
++}
++
++/***********************************************************************
+  *           get_placed_popup_owner
+  *
+  * The window to place a popup relative to, if there is one.
+@@ -593,7 +613,8 @@
+     BOOL managed, fullscreen = swp_flags & WINE_SWP_FULLSCREEN;
+     BOOL started_move = FALSE;
+     uint32_t button_serial = 0;
+-    HWND popup_owner;
++    HWND popup_owner, below = 0;
++    BOOL restack = FALSE;
+ 
+     TRACE("hwnd %p new_rects %s after %p flags %08x\n", hwnd, debugstr_window_rects(new_rects), insert_after, swp_flags);
+ 
+@@ -608,6 +629,16 @@
+     }
+     if (!managed && surface) owner = owner_hint;
+ 
++    /* Where a subsurface goes among the others of its owner, when it is
++     * new there or its place in the z-order may have changed. */
++    if (owner && owner != hwnd && surface &&
++        (!(swp_flags & SWP_NOZORDER) || (swp_flags & SWP_SHOWWINDOW) ||
++         get_subsurface_owner(hwnd) != owner))
++    {
++        below = get_subsurface_below(hwnd, owner);
++        restack = TRUE;
++    }
++
+     /* Likewise the pointer state, which has its own lock. */
+     pthread_mutex_lock(&process_wayland.pointer.mutex);
+     if (process_wayland.pointer.focused_hwnd == hwnd)
+@@ -646,6 +677,11 @@
+     }
+     else if (wayland_win_data_create_wayland_surface(data, owner_surface))
+     {
++        if (restack && data->wayland_surface)
++        {
++            data->wayland_surface->above_hwnd = below;
++            data->wayland_surface->restack = TRUE;
++        }
+         wayland_win_data_update_wayland_state(data);
+     }
+ 
+@@ -829,6 +865,10 @@
+     case WM_WAYLAND_END_MOVE:
+         wayland_end_app_move(hwnd);
+         return 0;
++    case WM_WAYLAND_RAISE:
++        if (get_subsurface_owner(hwnd))
++            NtUserSetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
++        return 0;
+     default:
+         FIXME("got window msg %x hwnd %p wp %lx lp %lx\n", msg, hwnd, (long)wp, lp);
+         return 0;

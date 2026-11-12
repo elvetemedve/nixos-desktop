@@ -1,0 +1,189 @@
+--- a/dlls/winewayland.drv/waylanddrv.h
++++ b/dlls/winewayland.drv/waylanddrv.h
+@@ -314,6 +314,10 @@
+     struct wayland_window_config window;
+     int content_width, content_height;
+     HCURSOR hcursor;
++    /* for a subsurface, the window origin that goes with the position the
++     * compositor has last confirmed, once it has confirmed one */
++    BOOL placed;
++    POINT placed_origin;
+ };
+ 
+ /**********************************************************************
+@@ -347,6 +351,7 @@
+                                 struct wayland_shm_buffer *shm_buffer,
+                                 HRGN surface_damage_region);
+ BOOL wayland_surface_reconfigure(struct wayland_surface *surface);
++BOOL wayland_surface_place_subsurface(struct wayland_surface *surface);
+ BOOL wayland_surface_config_is_compatible(struct wayland_surface_config *conf, RECT rect,
+                                           enum wayland_surface_config_state state);
+ RECT map_rect_to_surface(struct wayland_surface *surface, RECT rect);
+--- a/dlls/winewayland.drv/wayland_pointer.c
++++ b/dlls/winewayland.drv/wayland_pointer.c
+@@ -125,7 +125,7 @@
+ static void pointer_handle_motion_internal(wl_fixed_t sx, wl_fixed_t sy)
+ {
+     INPUT input = {0};
+-    RECT *window_rect;
++    RECT rect, *window_rect = &rect;
+     HWND hwnd;
+     POINT screen = { wl_fixed_to_double(sx), wl_fixed_to_double(sy) };
+     struct wayland_surface *surface;
+@@ -139,7 +139,11 @@
+         return;
+     }
+ 
+-    window_rect = &surface->window.rect;
++    rect = surface->window.rect;
++    /* The position is relative to where the compositor has the surface,
++     * which for a subsurface that is being moved is not there yet. */
++    if (surface->role == WAYLAND_SURFACE_ROLE_SUBSURFACE && surface->placed)
++        OffsetRect(&rect, surface->placed_origin.x - rect.left, surface->placed_origin.y - rect.top);
+ 
+     screen = map_point_from_surface(surface, screen);
+     screen.x += window_rect->left;
+--- a/dlls/winewayland.drv/wayland_surface.c
++++ b/dlls/winewayland.drv/wayland_surface.c
+@@ -486,6 +486,7 @@
+ 
+     surface->role = WAYLAND_SURFACE_ROLE_SUBSURFACE;
+     surface->owner_hwnd = owner->hwnd;
++    surface->placed = FALSE;
+ 
+     /* Present contents independently of the owner surface. */
+     wl_subsurface_set_desync(surface->wl_subsurface);
+@@ -841,19 +842,90 @@
+     return TRUE;
+ }
+ 
++struct subsurface_sync
++{
++    HWND hwnd;
++    POINT origin;
++};
++
++static void subsurface_sync_handle_done(void *data, struct wl_callback *wl_callback, uint32_t serial)
++{
++    struct subsurface_sync *sync = data;
++    struct wayland_win_data *win_data;
++    struct wayland_surface *surface;
++
++    wl_callback_destroy(wl_callback);
++
++    if ((win_data = wayland_win_data_get(sync->hwnd)))
++    {
++        if ((surface = win_data->wayland_surface) && surface->role == WAYLAND_SURFACE_ROLE_SUBSURFACE)
++        {
++            surface->placed = TRUE;
++            surface->placed_origin = sync->origin;
++        }
++        wayland_win_data_release(win_data);
++    }
++
++    free(sync);
++}
++
++static const struct wl_callback_listener subsurface_sync_listener =
++{
++    subsurface_sync_handle_done
++};
++
+ /**********************************************************************
+- *          wayland_surface_reconfigure_subsurface
++ *          wayland_surface_sync_subsurface_position
+  *
+- * Reconfigures the subsurface as needed to match the latest requested
+- * state.
++ * Asks the compositor to tell us when it has got to the subsurface
++ * position we just sent.
++ *
++ * Pointer positions come relative to the surface, and until then they are
++ * relative to where the surface was. Adding them to the new window
++ * position would make the pointer appear to jump by as much as the window
++ * moved, which an application that is dragging the window by itself takes
++ * for more dragging.
+  */
+-static void wayland_surface_reconfigure_subsurface(struct wayland_surface *surface)
++static void wayland_surface_sync_subsurface_position(struct wayland_surface *surface)
++{
++    struct wl_display *wl_display_wrapper;
++    struct wl_callback *wl_callback;
++    struct subsurface_sync *sync;
++
++    if (!(sync = malloc(sizeof(*sync)))) return;
++    sync->hwnd = surface->hwnd;
++    sync->origin.x = surface->window.rect.left;
++    sync->origin.y = surface->window.rect.top;
++
++    if (!(wl_display_wrapper = wl_proxy_create_wrapper(process_wayland.wl_display)))
++    {
++        free(sync);
++        return;
++    }
++    wl_proxy_set_queue((struct wl_proxy *)wl_display_wrapper, process_wayland.wl_event_queue);
++    wl_callback = wl_display_sync(wl_display_wrapper);
++    wl_proxy_wrapper_destroy(wl_display_wrapper);
++
++    if (wl_callback) wl_callback_add_listener(wl_callback, &subsurface_sync_listener, sync);
++    else free(sync);
++}
++
++/**********************************************************************
++ *          wayland_surface_place_subsurface
++ *
++ * Sends the subsurface's position to the compositor.
++ *
++ * This needs nothing from the surface itself, so it is also done as soon
++ * as the window moves, rather than only with the window's next frame: a
++ * window that is being dragged has no reason to draw one.
++ */
++BOOL wayland_surface_place_subsurface(struct wayland_surface *surface)
+ {
+     struct wayland_win_data *owner_data;
+     struct wayland_surface *owner_surface;
+ 
+-    if (!surface->processing.serial || !surface->processing.processed) return;
+-    if (!(owner_data = wayland_win_data_get(surface->owner_hwnd))) return;
++    if (!surface->wl_subsurface) return FALSE;
++    if (!(owner_data = wayland_win_data_get(surface->owner_hwnd))) return FALSE;
+ 
+     if ((owner_surface = owner_data->wayland_surface))
+     {
+@@ -870,11 +942,24 @@
+         else
+             wl_subsurface_place_above(surface->wl_subsurface, owner_surface->wl_surface);
+         wl_surface_commit(owner_surface->wl_surface);
+-
+-        memset(&surface->processing, 0, sizeof(surface->processing));
++        wayland_surface_sync_subsurface_position(surface);
+     }
+ 
+     wayland_win_data_release(owner_data);
++    return owner_surface != NULL;
++}
++
++/**********************************************************************
++ *          wayland_surface_reconfigure_subsurface
++ *
++ * Reconfigures the subsurface as needed to match the latest requested
++ * state.
++ */
++static void wayland_surface_reconfigure_subsurface(struct wayland_surface *surface)
++{
++    if (!surface->processing.serial || !surface->processing.processed) return;
++    if (wayland_surface_place_subsurface(surface))
++        memset(&surface->processing, 0, sizeof(surface->processing));
+ }
+ 
+ /**********************************************************************
+--- a/dlls/winewayland.drv/window.c
++++ b/dlls/winewayland.drv/window.c
+@@ -309,6 +309,7 @@
+          * we use the config fields to mark them as updated. */
+         surface->processing.serial = 1;
+         surface->processing.processed = TRUE;
++        wayland_surface_place_subsurface(surface);
+         break;
+     }
+ 

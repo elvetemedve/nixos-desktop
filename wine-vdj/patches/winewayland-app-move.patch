@@ -1,0 +1,222 @@
+--- a/dlls/winewayland.drv/waylanddrv.h
++++ b/dlls/winewayland.drv/waylanddrv.h
+@@ -71,6 +71,7 @@
+     WM_WAYLAND_INIT_DISPLAY_DEVICES = WM_WINE_FIRST_DRIVER_MSG,
+     WM_WAYLAND_CONFIGURE,
+     WM_WAYLAND_SET_FOREGROUND,
++    WM_WAYLAND_END_MOVE,
+ };
+ 
+ enum wayland_surface_config_state
+@@ -392,8 +393,14 @@
+     BOOL resizeable;
+     BOOL managed;
+     BOOL layered_attribs_set;
++    /* the compositor is moving the window, on behalf of an application
++     * that was moving it by itself */
++    BOOL app_move;
++    /* window position before the application started moving it */
++    POINT app_move_origin;
+ };
+ 
++
+ struct wayland_win_data *wayland_win_data_get(HWND hwnd);
+ void wayland_win_data_release(struct wayland_win_data *data);
+ 
+--- a/dlls/winewayland.drv/wayland_pointer.c
++++ b/dlls/winewayland.drv/wayland_pointer.c
+@@ -183,6 +183,8 @@
+                                  wl_fixed_t sx, wl_fixed_t sy)
+ {
+     struct wayland_pointer *pointer = &process_wayland.pointer;
++    struct wayland_win_data *win_data;
++    BOOL app_move = FALSE;
+     HWND hwnd;
+ 
+     InterlockedExchange(&process_wayland.input_serial, serial);
+@@ -194,6 +196,15 @@
+ 
+     TRACE("hwnd=%p\n", hwnd);
+ 
++    /* The compositor takes the pointer away for the length of a move, so
++     * getting it back is how we learn that the move is over. */
++    if ((win_data = wayland_win_data_get(hwnd)))
++    {
++        app_move = win_data->app_move;
++        wayland_win_data_release(win_data);
++    }
++    if (app_move) NtUserPostMessage(hwnd, WM_WAYLAND_END_MOVE, 0, 0);
++
+     pthread_mutex_lock(&pointer->mutex);
+     pointer->focused_hwnd = hwnd;
+     pointer->enter_serial = serial;
+--- a/dlls/winewayland.drv/window.c
++++ b/dlls/winewayland.drv/window.c
+@@ -30,6 +30,7 @@
+ #include "ntstatus.h"
+ 
+ #include "waylanddrv.h"
++#include "wine/server.h"
+ 
+ #include "wine/debug.h"
+ 
+@@ -429,6 +430,86 @@
+ }
+ 
+ /***********************************************************************
++ *           is_app_move
++ *
++ * Whether a window rect change is a plain move: same size, new position.
++ * The minimize sentinel position is not a move.
++ */
++static BOOL is_app_move(const RECT *old_rect, const RECT *new_rect)
++{
++    if (new_rect->left <= -32000 || old_rect->left <= -32000) return FALSE;
++    if (new_rect->right - new_rect->left != old_rect->right - old_rect->left) return FALSE;
++    if (new_rect->bottom - new_rect->top != old_rect->bottom - old_rect->top) return FALSE;
++    return new_rect->left != old_rect->left || new_rect->top != old_rect->top;
++}
++
++/***********************************************************************
++ *           wayland_win_data_start_move
++ *
++ * Hands a move the application is doing by itself over to the compositor.
++ *
++ * An application that draws its own title bar moves its window with
++ * SetWindowPos on every mouse move. A Wayland client cannot place its
++ * toplevel, so the surface stays where it is while the Win32 position
++ * changes, and since pointer positions are reported relative to the
++ * surface, the pointer appears to have moved by the same amount. The
++ * application takes that for more dragging and moves again, further each
++ * time, until the window is off screen in Win32 terms and clicks no longer
++ * reach it.
++ */
++static BOOL wayland_win_data_start_move(struct wayland_win_data *data, uint32_t button_serial)
++{
++    struct wayland_surface *surface = data->wayland_surface;
++    struct wl_seat *wl_seat;
++    BOOL ret = FALSE;
++
++    if (!surface || !wayland_surface_is_toplevel(surface)) return FALSE;
++
++    pthread_mutex_lock(&process_wayland.seat.mutex);
++    if ((wl_seat = process_wayland.seat.wl_seat))
++    {
++        TRACE("hwnd=%p button_serial=%u\n", data->hwnd, button_serial);
++        xdg_toplevel_move(surface->xdg_toplevel, wl_seat, button_serial);
++        ret = TRUE;
++    }
++    pthread_mutex_unlock(&process_wayland.seat.mutex);
++
++    return ret;
++}
++
++/***********************************************************************
++ *           wayland_end_app_move
++ *
++ * Puts the window back where it was, in Win32 terms, before the
++ * application started moving it. The compositor has done the actual move,
++ * and the steps the application made before that took over would add up
++ * over many moves, pushing the window off screen in Win32 terms.
++ */
++static void wayland_end_app_move(HWND hwnd)
++{
++    struct wayland_win_data *data;
++    RECT rect;
++    BOOL moved;
++
++    if (!(data = wayland_win_data_get(hwnd))) return;
++    if (!data->app_move)
++    {
++        wayland_win_data_release(data);
++        return;
++    }
++    data->app_move = FALSE;
++    rect = data->rects.window;
++    moved = rect.left != data->app_move_origin.x || rect.top != data->app_move_origin.y;
++    OffsetRect(&rect, data->app_move_origin.x - rect.left, data->app_move_origin.y - rect.top);
++    wayland_win_data_release(data);
++
++    TRACE("hwnd=%p rect=%s moved=%d\n", hwnd, wine_dbgstr_rect(&rect), moved);
++
++    if (moved)
++        NtUserSetRawWindowPos(hwnd, rect, SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER, FALSE);
++}
++
++/***********************************************************************
+  *           WAYLAND_WindowPosChanged
+  */
+ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UINT swp_flags,
+@@ -438,6 +519,8 @@
+     struct wayland_surface *owner_surface;
+     struct wayland_win_data *data, *owner_data;
+     BOOL managed, fullscreen = swp_flags & WINE_SWP_FULLSCREEN;
++    BOOL started_move = FALSE;
++    uint32_t button_serial = 0;
+ 
+     TRACE("hwnd %p new_rects %s after %p flags %08x\n", hwnd, debugstr_window_rects(new_rects), insert_after, swp_flags);
+ 
+@@ -446,10 +529,29 @@
+      * acquire the lock itself internally. */
+     if (!(managed = is_window_managed(hwnd, swp_flags, fullscreen)) && surface) owner = owner_hint;
+ 
++    /* Likewise the pointer state, which has its own lock. */
++    pthread_mutex_lock(&process_wayland.pointer.mutex);
++    if (process_wayland.pointer.focused_hwnd == hwnd)
++        button_serial = process_wayland.pointer.button_serial;
++    pthread_mutex_unlock(&process_wayland.pointer.mutex);
++
+     if (!(data = wayland_win_data_get(hwnd))) return;
+     owner_data = owner && owner != hwnd ? wayland_win_data_get(owner) : NULL;
+     owner_surface = owner_data ? owner_data->wayland_surface : NULL;
+ 
++    /* A window moved while a button is held on it is being dragged by the
++     * application itself. */
++    if (button_serial && surface && managed && !fullscreen &&
++        is_app_move(&data->rects.window, &new_rects->window))
++    {
++        if ((started_move = wayland_win_data_start_move(data, button_serial)) && !data->app_move)
++        {
++            data->app_move = TRUE;
++            data->app_move_origin.x = data->rects.window.left;
++            data->app_move_origin.y = data->rects.window.top;
++        }
++    }
++
+     data->rects = *new_rects;
+     data->is_fullscreen = fullscreen;
+     data->resizeable = swp_flags & WINE_SWP_RESIZABLE;
+@@ -470,6 +572,23 @@
+ 
+     if (owner_data) wayland_win_data_release(owner_data);
+     wayland_win_data_release(data);
++
++    if (started_move)
++    {
++        /* The compositor now owns the pointer until the move ends, and the
++         * button release goes to it rather than to us. Release the button
++         * for the application, so that it ends its own drag, and forget
++         * the serial, so that the moves it still makes for mouse input it
++         * has already queued don't start another one. */
++        INPUT input = {.type = INPUT_MOUSE, .mi.dwFlags = MOUSEEVENTF_LEFTUP};
++
++        pthread_mutex_lock(&process_wayland.pointer.mutex);
++        if (process_wayland.pointer.button_serial == button_serial)
++            process_wayland.pointer.button_serial = 0;
++        pthread_mutex_unlock(&process_wayland.pointer.mutex);
++
++        NtUserSendHardwareInput(hwnd, SEND_HWMSG_RAWINPUT, &input, 0);
++    }
+ }
+ 
+ static void wayland_configure_window(HWND hwnd)
+@@ -626,6 +745,9 @@
+     case WM_WAYLAND_SET_FOREGROUND:
+         NtUserSetForegroundWindowInternal(hwnd);
+         return 0;
++    case WM_WAYLAND_END_MOVE:
++        wayland_end_app_move(hwnd);
++        return 0;
+     default:
+         FIXME("got window msg %x hwnd %p wp %lx lp %lx\n", msg, hwnd, (long)wp, lp);
+         return 0;

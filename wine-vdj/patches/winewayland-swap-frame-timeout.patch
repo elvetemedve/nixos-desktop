@@ -1,0 +1,145 @@
+--- a/dlls/winewayland.drv/opengl.c
++++ b/dlls/winewayland.drv/opengl.c
+@@ -46,10 +46,23 @@
+ static const struct opengl_drawable_funcs wayland_drawable_funcs;
+ static BOOL (*p_egl_describe_pixel_format)( int format, struct wgl_pixel_format *pf );
+ 
++/* How long a swap waits for the compositor to ask for the next frame. */
++#define FRAME_TIMEOUT_MS 100
++/* How many swaps go by, once it has stopped asking, before the frame request
++ * is made anew. */
++#define STALLED_RENEW_SWAPS 64
++
+ struct wayland_gl_drawable
+ {
+     struct opengl_drawable base;
+     struct wl_egl_window *wl_egl_window;
++    /* queue for frame_callback, dispatched by the thread that swaps */
++    struct wl_event_queue *frame_queue;
++    /* frame callback of the last swap, until the compositor answers it */
++    struct wl_callback *frame_callback;
++    /* the compositor has stopped asking for frames */
++    BOOL stalled;
++    unsigned int stalled_swaps;
+ };
+ 
+ static struct wayland_gl_drawable *impl_from_opengl_drawable(struct opengl_drawable *base)
+@@ -61,6 +74,73 @@
+ {
+     struct wayland_gl_drawable *gl = impl_from_opengl_drawable(base);
+     if (gl->wl_egl_window) wl_egl_window_destroy(gl->wl_egl_window);
++    if (gl->frame_callback) wl_callback_destroy(gl->frame_callback);
++    if (gl->frame_queue) wl_event_queue_destroy(gl->frame_queue);
++}
++
++static void frame_handle_done(void *data, struct wl_callback *wl_callback, uint32_t time)
++{
++    struct wayland_gl_drawable *gl = data;
++
++    if (gl->frame_callback == wl_callback) gl->frame_callback = NULL;
++    wl_callback_destroy(wl_callback);
++}
++
++static const struct wl_callback_listener frame_listener =
++{
++    frame_handle_done
++};
++
++/**********************************************************************
++ *           wayland_drawable_wait_frame
++ *
++ * Waits until the compositor wants the frame after the last one we gave
++ * it, but no longer than FRAME_TIMEOUT_MS.
++ *
++ * EGL would do the waiting itself, with a swap interval, but it waits for
++ * as long as it takes, and a compositor asks for no frames at all while a
++ * surface is hidden, minimized or covered. A thread that swaps would then
++ * hang, with whatever locks it holds.
++ */
++static void wayland_drawable_wait_frame(struct wayland_gl_drawable *gl)
++{
++    struct timespec timeout = {.tv_nsec = FRAME_TIMEOUT_MS * 1000000};
++
++    /* An application may go on drawing to a window it has hidden, for as
++     * long as it likes, and the thread that draws for it may hold locks
++     * that its other threads need: with wined3d, one thread draws every
++     * window of the process. So once the compositor has stopped asking,
++     * do not wait at all until it asks again, which is also what happens
++     * to a hidden window with the X11 driver. */
++    if (gl->stalled) timeout.tv_nsec = 0;
++
++    while (gl->frame_callback)
++    {
++        if (wl_display_dispatch_queue_timeout(process_wayland.wl_display, gl->frame_queue, &timeout) <= 0)
++            break;
++    }
++
++    if (!gl->frame_callback)
++    {
++        if (gl->stalled) TRACE("drawable %s, frame callbacks are back\n", debugstr_opengl_drawable(&gl->base));
++        gl->stalled = FALSE;
++        return;
++    }
++
++    if (!gl->stalled)
++    {
++        TRACE("drawable %s, no frame callback in %u ms\n", debugstr_opengl_drawable(&gl->base), FRAME_TIMEOUT_MS);
++        gl->stalled = TRUE;
++        gl->stalled_swaps = 0;
++    }
++
++    /* The callback stays, to tell us when the surface is shown again. Ask
++     * anew now and then, in case the compositor has dropped it. */
++    if (++gl->stalled_swaps % STALLED_RENEW_SWAPS == 0)
++    {
++        wl_callback_destroy(gl->frame_callback);
++        gl->frame_callback = NULL;
++    }
+ }
+ 
+ static EGLConfig egl_config_for_format(int format)
+@@ -106,6 +186,7 @@
+ 
+     if (!(gl->wl_egl_window = wl_egl_window_create(surface->wl_surface, size.cx, size.cy))) goto err;
+     if (!(gl->base.surface = funcs->p_eglCreateWindowSurface(egl->display, config, gl->wl_egl_window, attribs))) goto err;
++    gl->frame_queue = wl_display_create_queue(process_wayland.wl_display);
+     set_client_surface(hwnd, surface);
+ 
+     TRACE("Created drawable %s with egl_surface %p\n", debugstr_opengl_drawable(&gl->base), gl->base.surface);
+@@ -133,7 +214,8 @@
+ 
+     TRACE("drawable %s, flags %#x\n", debugstr_opengl_drawable(base), flags);
+ 
+-    if (flags & GL_FLUSH_INTERVAL) funcs->p_eglSwapInterval(egl->display, abs(base->interval));
++    /* The swap interval is honoured in wayland_drawable_swap, not by EGL. */
++    if (flags & GL_FLUSH_INTERVAL) funcs->p_eglSwapInterval(egl->display, 0);
+ 
+     /* Since context_flush is called from operations that may latch the native size,
+      * perform any pending resizes before calling them. */
+@@ -144,7 +226,26 @@
+ {
+     struct wayland_gl_drawable *gl = impl_from_opengl_drawable(base);
+ 
++    struct wayland_client_surface *client = impl_from_client_surface(base->client);
++    struct wl_surface *wrapper;
++
+     client_surface_present(base->client);
++
++    if (gl->frame_queue)
++    {
++        if (base->interval) wayland_drawable_wait_frame(gl);
++
++        /* The request goes out with the commit that eglSwapBuffers makes. */
++        if (!gl->frame_callback && (wrapper = wl_proxy_create_wrapper(client->wl_surface)))
++        {
++            wl_proxy_set_queue((struct wl_proxy *)wrapper, gl->frame_queue);
++            gl->frame_callback = wl_surface_frame(wrapper);
++            wl_proxy_wrapper_destroy(wrapper);
++            if (gl->frame_callback) wl_callback_add_listener(gl->frame_callback, &frame_listener, gl);
++        }
++    }
++
++    funcs->p_eglSwapInterval(egl->display, 0);
+     funcs->p_eglSwapBuffers(egl->display, gl->base.surface);
+ 
+     return TRUE;

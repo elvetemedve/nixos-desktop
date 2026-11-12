@@ -86,5 +86,81 @@ Seven local patches plus one carried from wine-staging. All apply cleanly with
   launch, and its crash guard relaunches it in a loop. Still a stub in Wine
   11.21. Not filed upstream yet.
 
+## Built per module
+
+These are not in the `patches` list. Each set is built into its one module
+(`winewayland.so`, `dxgi.dll`), which is then swapped into the full build, so
+changing one does not rebuild all of Wine.
+
+The `virtualdj` command runs on the Wayland driver, and these patches are
+what make it usable for VirtualDJ on KDE Plasma. What was
+tested, what is still open and what Wayland rules out is in
+`WAYLAND-GAPS.md`. None is filed upstream.
+
+- `winewayland-smooth-scroll.patch` — `wayland_pointer.c`. Turns touchpad
+  scroll distance (`wl_pointer.axis` with no notch attached) into wheel
+  messages, in whole notches with the remainder carried over, as XWayland
+  does. Stock Wine ignores it, so two-finger scroll does nothing.
+
+- `winewayland-app-move.patch` — `window.c`, `wayland_pointer.c`,
+  `waylanddrv.h`. When an application moves its own window with
+  `SetWindowPos` while a button is down (a skin title bar), hands the move to
+  the compositor with `xdg_toplevel_move`. Without it the surface stays put
+  while the Win32 position changes, the pointer appears to move by the same
+  amount, and the window runs away until clicks no longer reach it.
+
+- `winewayland-fractional-size.patch` — `wayland_surface.c`, `window.c`.
+  Maps the window size to surface coordinates from the origin, so that at a
+  fractional scale it no longer depends on the window position and comes out
+  a pixel off the client surface (a white line along one edge).
+
+- `winewayland-placed-popups.patch` — `window.c`. Makes a bare, unowned
+  popup (menu, dropdown) a subsurface of the window under it, so it appears
+  where the application put it, not where the compositor places new windows.
+
+- `winewayland-pinch-to-wheel.patch` — `wayland.c`, `wayland_pointer.c`,
+  `waylanddrv.h`, `Makefile.in`, vendored
+  `pointer-gestures-unstable-v1.xml`. The Wayland twin of
+  `winex11-pinch-to-wheel.patch`: binds `zwp_pointer_gestures_v1` and turns
+  pinch scale into `WM_MOUSEWHEEL` notches.
+
+- `winewayland-swap-frame-timeout.patch` — `opengl.c`. A buffer swap waits
+  at most 100 ms for the compositor's frame callback, and once the
+  compositor has stopped sending them (hidden or unmapped surface) does not
+  wait at all until they return. Stock Wine waits without limit, and since
+  one wined3d thread draws every window of the process, one hidden window
+  that keeps drawing stops all of them.
+
+- `winewayland-subsurface-pointer.patch` — `wayland_surface.c`, `window.c`,
+  `wayland_pointer.c`, `waylanddrv.h`. Sends a subsurface's new position as
+  soon as the window moves, not with its next drawn frame, and maps pointer
+  positions with the position the compositor has confirmed. Without it,
+  owned windows (VirtualDJ's editors) do not follow a drag and clicks land
+  in the wrong place.
+
+- `winewayland-subsurface-stacking.patch` — `window.c`, `wayland_surface.c`,
+  `wayland_pointer.c`, `waylanddrv.h`. Stacks the subsurfaces of one owner
+  in Win32 z-order: when a window is shown or its z-order changes, its
+  surface is placed right above the next window down that shares its owner,
+  and a plain move leaves the order alone. A button press on a subsurface
+  raises its window, which the compositor only does for toplevels. Stock
+  Wine places every subsurface "above the owner", which is below all the
+  others, so a menu opened from an owned window appears underneath it.
+
+- `winewayland-touch.patch` — new `wayland_touch.c`, `wayland.c`,
+  `waylanddrv.h`, `Makefile.in`. `wl_touch` input sent on as
+  `WM_POINTERDOWN/UPDATE/UP`, as winex11 does. **Not in the build:** it
+  compiles but has never been run, for lack of a touchscreen.
+
+- `dxgi-output-waitforvblank.patch` — `dlls/dxgi/output.c`. Implements
+  `IDXGIOutput::WaitForVBlank`, a stub returning `E_NOTIMPL` in Wine 11.21,
+  by sleeping until the next multiple of the refresh period. VirtualDJ's
+  frame limiter is built on it: it waits refresh rate / `skinFPS` vertical
+  blanks before each frame and ignores the return value. With the stub the
+  limiter did nothing, the skin ran at about 115 fps, and with the Visuals
+  window and Visualization Settings open the GUI stalled for 100 ms at a
+  time. Applies under X11 and Wayland alike. The vertical blank is
+  approximated from the clock, not taken from the display.
+
 Delete a patch from `flake.nix`'s `patches` list once its fix lands in
 upstream Wine and the pinned `wine-src` moves past it.

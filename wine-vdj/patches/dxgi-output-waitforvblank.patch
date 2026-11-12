@@ -1,0 +1,53 @@
+--- a/dlls/dxgi/output.c
++++ b/dlls/dxgi/output.c
+@@ -363,14 +363,44 @@
+ 
+ static HRESULT STDMETHODCALLTYPE dxgi_output_WaitForVBlank(IDXGIOutput6 *iface)
+ {
+-    static BOOL once = FALSE;
++    /* There is no way to learn from the display drivers when the output's
++     * vertical blank really is, so this keeps time by the clock instead:
++     * it returns at the next multiple of the refresh period. That is the
++     * right pace at an arbitrary phase, which is what an application that
++     * paces its frames by this call needs; with the call failing at once,
++     * such an application spins, or falls back on a pace of its own. */
++    struct dxgi_output *output = impl_from_IDXGIOutput6(iface);
++    enum wined3d_display_rotation rotation;
++    struct wined3d_display_mode mode;
++    static LONG cached_rate, cached_tick;
++    LARGE_INTEGER frequency, now;
++    LONGLONG period, remaining;
++    LONG rate, tick;
+ 
+-    if (!once++)
+-        FIXME("iface %p stub!\n", iface);
+-    else
+-        TRACE("iface %p stub!\n", iface);
++    TRACE("iface %p.\n", iface);
+ 
+-    return E_NOTIMPL;
++    /* The refresh rate is looked up at most once a second: the lookup takes
++     * the wined3d lock, which a thread that presents may hold for a while. */
++    tick = GetTickCount();
++    if (!(rate = cached_rate) || tick - cached_tick >= 1000)
++    {
++        rate = 60;
++        wined3d_mutex_lock();
++        if (SUCCEEDED(wined3d_output_get_display_mode(output->wined3d_output, &mode, &rotation))
++                && mode.refresh_rate)
++            rate = mode.refresh_rate;
++        wined3d_mutex_unlock();
++        cached_rate = rate;
++        cached_tick = tick;
++    }
++
++    QueryPerformanceFrequency(&frequency);
++    QueryPerformanceCounter(&now);
++    period = frequency.QuadPart / rate;
++    remaining = period - now.QuadPart % period;
++    Sleep((remaining * 1000 + frequency.QuadPart - 1) / frequency.QuadPart);
++
++    return S_OK;
+ }
+ 
+ static HRESULT STDMETHODCALLTYPE dxgi_output_TakeOwnership(IDXGIOutput6 *iface, IUnknown *device, BOOL exclusive)
