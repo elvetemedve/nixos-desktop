@@ -16,7 +16,7 @@
     kernel32's IsEnclaveTypeSupported, answering "not supported", which
     VirtualDJ 8.5.9729+ calls on every start and which otherwise crashes it
     on Wine's missing-import stub.
-    Eight more patches, for the Wayland driver (touchpad scrolling and
+    Nine more patches, for the Wayland driver (touchpad scrolling and
     pinch, windows the application drags by itself, size rounding at
     fractional scales, popup placement, swaps on hidden windows, and
     owned-window positions and stacking), are built into winewayland.so alone, and one,
@@ -98,6 +98,7 @@
         ./patches/winewayland-swap-frame-timeout.patch
         ./patches/winewayland-subsurface-pointer.patch
         ./patches/winewayland-subsurface-stacking.patch
+        ./patches/winewayland-grab-pointer.patch
       ];
 
       # winewayland.so alone, from wine-base's own source, patches,

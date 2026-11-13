@@ -147,6 +147,13 @@ tested, what is still open and what Wayland rules out is in
   Wine places every subsurface "above the owner", which is below all the
   others, so a menu opened from an owned window appears underneath it.
 
+- `winewayland-grab-pointer.patch` — `wayland_pointer.c`. Stops clamping the
+  pointer position to the window while a button is held. Stock Wine always
+  clamps, so in a drag that leaves the window (resizing an editor by its
+  edge) the application sees the pointer one pixel inside the edge and the
+  window grows a pixel or two per motion event, however far the pointer
+  went.
+
 - `winewayland-touch.patch` — new `wayland_touch.c`, `wayland.c`,
   `waylanddrv.h`, `Makefile.in`. `wl_touch` input sent on as
   `WM_POINTERDOWN/UPDATE/UP`, as winex11 does. **Not in the build:** it
