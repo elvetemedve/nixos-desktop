@@ -20,6 +20,7 @@
     ../../modules/plasma.nix
     ../../modules/cosmic.nix
     ../../modules/whisrs.nix
+    ../../modules/fprint-led.nix
 
     ../../modules/ddj-flx10.nix
     ../../modules/external-ssd.nix
