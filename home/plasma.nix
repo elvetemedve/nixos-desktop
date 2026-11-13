@@ -68,4 +68,14 @@
       };
     };
   };
+
+  # COSMIC's NixOS module sets QT_QPA_PLATFORMTHEME=qt5ct system-wide. In Plasma
+  # that replaces KDE's platform theme, so Qt apps and xdg-desktop-portal-kde
+  # (which tells GTK/Firefox/Electron apps the colour scheme) ignore the Plasma
+  # colour scheme and come up light. startplasma sources these scripts before
+  # exporting its environment to systemd/D-Bus; it only picks up variables that
+  # are set afterwards, so `unset` would have no effect.
+  xdg.configFile."plasma-workspace/env/qt-platformtheme.sh".text = ''
+    export QT_QPA_PLATFORMTHEME=kde
+  '';
 }

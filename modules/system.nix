@@ -46,8 +46,8 @@
     LC_TIME = "hu_HU.UTF-8";
   };
 
-  # Enable the GNOME Desktop Environment.
-  services.displayManager.gdm.enable = true;
+  # Enable the GNOME Desktop Environment. The login manager is COSMIC Greeter
+  # (see cosmic.nix), not GDM.
   services.desktopManager.gnome.enable = true;
   services.gnome.gnome-keyring.enable = lib.mkForce false; # Disable Gnome Keyring Daemon, because other app is uses as Secret Service
   services.gnome.gnome-software.enable = true; # Install the GNOME Software app.

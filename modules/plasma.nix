@@ -1,6 +1,7 @@
 { config, lib, pkgs, ... }:
 
-# KDE Plasma 6 as a second session next to GNOME, picked from GDM's gear menu.
+# KDE Plasma 6 as a second session next to GNOME, picked from the login
+# manager's session menu.
 # Trial for eGPU hotplug: KWin handles GPUs appearing/disappearing at runtime,
 # unlike mutter (see blackwell-egpu-manager.nix).
 {
