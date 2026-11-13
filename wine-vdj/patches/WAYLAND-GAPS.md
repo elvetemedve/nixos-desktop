@@ -24,9 +24,10 @@ sessions longer than a few minutes, any compositor other than KWin.
 | Subsurface position lags the Win32 position | Editor windows (BPM, POI, track) did not follow a drag, clicks landed in the wrong place, the close button was dead until a resize | new `wayland_surface_place_subsurface`, `wayland_surface_sync_subsurface_position` (`wayland_surface.c`); `wayland_win_data_update_wayland_state` (`window.c`); pointer motion (`wayland_pointer.c`) | 94 | `winewayland-subsurface-pointer` | Confirmed fixed |
 | No stacking order among subsurfaces | The Visuals window's context menu opened underneath it; clicking a lower editor window did not bring it to the front. Stock Wine only ever places a subsurface "above the owner", which is below every other subsurface | new `get_subsurface_below`, `WM_WAYLAND_RAISE`; `WAYLAND_WindowPosChanged` (`window.c`); new `wayland_surface_get_sibling_below`; `wayland_surface_place_subsurface` (`wayland_surface.c`); `pointer_handle_button` (`wayland_pointer.c`) | 81 | `winewayland-subsurface-stacking` | Confirmed fixed |
 | Pointer clamped to the window during a drag | Resizing an editor window by its edge crawled at about 1 px per motion event once the pointer got ahead of the edge (traced: pointer 300 px ahead, every event clamped) | `pointer_handle_motion_internal` (`wayland_pointer.c`): no clamp while a button is held | 12 | `winewayland-grab-pointer` | Confirmed fixed |
+| No work area, so no maximize for self-framed windows | The middle title-bar control only toggled windowed and full screen. VirtualDJ maximizes by sizing its window to the work area, which the driver reported as the whole screen | `registry_handle_global` (`wayland.c`): `xdg_wm_base` v4; new `xdg_toplevel_handle_configure_bounds` (`wayland_surface.c`); `wayland_add_device_monitor` (`display.c`); new `is_work_area_rect`, `wayland_win_data_get_config`, `wayland_surface_update_state_toplevel`, `wayland_configure_window` (`window.c`) | 75 | `winewayland-work-area-maximize` | Confirmed fixed |
 | No touchscreen input | None seen: no touchscreen here. The driver has no `wl_touch` code at all | `seat_handle_capabilities` (`wayland.c`); new `wayland_touch.c` sending `WM_POINTERDOWN/UPDATE/UP` as winex11 does | 199 | `winewayland-touch` | Compiles, never run, not in the build |
 
-Total in the build: 631 lines in nine patches. With touch: 830.
+Total in the build: 706 lines in ten patches. With touch: 905.
 
 ## Not a driver gap
 
@@ -45,10 +46,11 @@ Total in the build: 631 lines in nine patches. With touch: 830.
    second, as nothing paced it. With it, the log shows a steady 60 surface
    updates a second, shown or hidden, and the GUI stays responsive with
    Visualization Settings open.
-2. **No maximized mode.** The middle title-bar control toggles between
-   windowed and full screen; under X11 it has a third, maximized state.
-   Probable cause, not confirmed: the driver reports no work area, so a
-   window of work-area size is taken for full screen.
+2. **Closed: no maximized mode.** The driver reported no work area; fixed by
+   `winewayland-work-area-maximize.patch`. The work area is known only once
+   a top-level window exists, is assumed to start at the monitor's top left
+   (panel at the bottom or right), and is lost again if the desktop process
+   re-reads the outputs (a screen plugged in).
 3. **Closed: resize from an edge was slow.** The pointer clamp above;
    fixed by `winewayland-grab-pointer.patch`.
 4. **Full screen on a chosen output.** `xdg_toplevel_set_fullscreen` is
@@ -84,7 +86,7 @@ Medium.
 - Everything in the first table was found by using the program, not by
   reading the source: of the eight gaps predicted from the source, three were
   real (scroll, pinch, touch), one was a different bug than predicted (the
-  freeze), and six new ones appeared only in use.
+  freeze), and seven new ones appeared only in use.
 - So the untested areas (points 4 and 6, a second screen at another scale,
   long sessions) should be expected to hold more of the same kind.
 - The patches have been run on KWin only. `winewayland-placed-popups` and

@@ -1,0 +1,211 @@
+diff -urN a/dlls/winewayland.drv/display.c b/dlls/winewayland.drv/display.c
+--- a/dlls/winewayland.drv/display.c	2026-11-13 23:50:37.908238934 +0100
++++ b/dlls/winewayland.drv/display.c	2026-11-14 00:05:17.737271430 +0100
+@@ -209,17 +209,34 @@
+                                        struct output_info *primary)
+ {
+     struct gdi_monitor monitor = {0};
++    int work_width, work_height, logical_w, logical_h;
+ 
+     SetRect(&monitor.rc_monitor, output_info->x, output_info->y,
+             output_info->x + output_info->output->current_mode->width,
+             output_info->y + output_info->output->current_mode->height);
+     OffsetRect(&monitor.rc_monitor, -primary->x, -primary->y);
+ 
+-    /* We don't have a direct way to get the work area in Wayland. */
++    /* We don't have a direct way to get the work area in Wayland. The size
++     * the compositor recommends as the largest for a window is the nearest
++     * thing; where a panel is we are not told, so assume the bottom or the
++     * right. It belongs to this output if it spans it one way. */
+     monitor.rc_work = monitor.rc_monitor;
++    work_width = process_wayland.work_width;
++    work_height = process_wayland.work_height;
++    logical_w = output_info->output->logical_w;
++    logical_h = output_info->output->logical_h;
++    if (work_width > 0 && work_height > 0 && work_width <= logical_w && work_height <= logical_h &&
++        (work_width == logical_w || work_height == logical_h))
++    {
++        int width = monitor.rc_monitor.right - monitor.rc_monitor.left;
++        int height = monitor.rc_monitor.bottom - monitor.rc_monitor.top;
++        monitor.rc_work.right = monitor.rc_work.left + (work_width * width + logical_w / 2) / logical_w;
++        monitor.rc_work.bottom = monitor.rc_work.top + (work_height * height + logical_h / 2) / logical_h;
++    }
+ 
+-    TRACE("name=%s rc_monitor=rc_work=%s\n",
+-          output_info->output->name, wine_dbgstr_rect(&monitor.rc_monitor));
++    TRACE("name=%s rc_monitor=%s rc_work=%s\n",
++          output_info->output->name, wine_dbgstr_rect(&monitor.rc_monitor),
++          wine_dbgstr_rect(&monitor.rc_work));
+ 
+     device_manager->add_monitor(&monitor, param);
+ }
+diff -urN a/dlls/winewayland.drv/wayland.c b/dlls/winewayland.drv/wayland.c
+--- a/dlls/winewayland.drv/wayland.c	2026-11-13 23:50:37.908048637 +0100
++++ b/dlls/winewayland.drv/wayland.c	2026-11-14 00:05:17.737086885 +0100
+@@ -126,10 +126,11 @@
+     else if (strcmp(interface, "xdg_wm_base") == 0)
+     {
+         /* Bind version 2 so that compositors (e.g., sway) can properly send tiled
+-         * states, instead of falling back to (ab)using the maximized state. */
++         * states, instead of falling back to (ab)using the maximized state,
++         * and version 4 for xdg_toplevel.configure_bounds. */
+         process_wayland.xdg_wm_base =
+             wl_registry_bind(registry, id, &xdg_wm_base_interface,
+-                             version < 2 ? version : 2);
++                             version < 4 ? version : 4);
+         xdg_wm_base_add_listener(process_wayland.xdg_wm_base, &xdg_wm_base_listener, NULL);
+     }
+     else if (strcmp(interface, "wl_shm") == 0)
+diff -urN a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
+--- a/dlls/winewayland.drv/waylanddrv.h	2026-11-13 23:50:37.908106464 +0100
++++ b/dlls/winewayland.drv/waylanddrv.h	2026-11-14 00:05:17.737154271 +0100
+@@ -219,6 +219,9 @@
+     struct wl_list output_list;
+     /* Protects the output_list and the wayland_output.current states. */
+     pthread_mutex_t output_mutex;
++    /* The size the compositor recommends as the largest for a window (its
++     * work area), in surface coordinates. Protected by output_mutex. */
++    int work_width, work_height;
+     LONG input_serial;
+ };
+ 
+@@ -419,6 +422,8 @@
+     /* window rects, relative to parent client area */
+     struct window_rects rects;
+     BOOL is_fullscreen;
++    /* The window covers its monitor's work area. */
++    BOOL is_work_area;
+     BOOL resizeable;
+     BOOL managed;
+     BOOL layered_attribs_set;
+diff -urN a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayland_surface.c
+--- a/dlls/winewayland.drv/wayland_surface.c	2026-11-13 23:50:37.908071768 +0100
++++ b/dlls/winewayland.drv/wayland_surface.c	2026-11-14 00:05:17.737113913 +0100
+@@ -220,10 +220,32 @@
+     NtUserPostMessage((HWND)data, WM_SYSCOMMAND, SC_CLOSE, 0);
+ }
+ 
++static void xdg_toplevel_handle_configure_bounds(void *private, struct xdg_toplevel *xdg_toplevel,
++                                                 int32_t width, int32_t height)
++{
++    HWND hwnd = private;
++    BOOL changed;
++
++    TRACE("hwnd=%p %dx%d\n", hwnd, width, height);
++
++    if (width <= 0 || height <= 0) return;
++
++    pthread_mutex_lock(&process_wayland.output_mutex);
++    changed = process_wayland.work_width != width || process_wayland.work_height != height;
++    process_wayland.work_width = width;
++    process_wayland.work_height = height;
++    pthread_mutex_unlock(&process_wayland.output_mutex);
++
++    /* This is the only word we get about the work area, so report it as
++     * such. Only this process knows it, so it also has to do the update. */
++    if (changed) NtUserPostMessage(hwnd, WM_WAYLAND_INIT_DISPLAY_DEVICES, 0, 0);
++}
++
+ static const struct xdg_toplevel_listener xdg_toplevel_listener =
+ {
+     xdg_toplevel_handle_configure,
+-    xdg_toplevel_handle_close
++    xdg_toplevel_handle_close,
++    xdg_toplevel_handle_configure_bounds
+ };
+ 
+ void wp_fractional_scale_handle_scale(void* user_data,
+diff -urN a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
+--- a/dlls/winewayland.drv/window.c	2026-11-13 23:50:37.908183579 +0100
++++ b/dlls/winewayland.drv/window.c	2026-11-14 00:05:17.737293118 +0100
+@@ -154,8 +154,10 @@
+         else if (!(style & WS_MINIMIZE))
+             window_state |= WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN;
+     }
+-    else if (style & WS_MAXIMIZE)
++    else if ((style & WS_MAXIMIZE) || data->is_work_area)
+     {
++        /* An application that draws its own frame maximizes by taking the
++         * work area, with no WS_MAXIMIZE. */
+         window_state |= WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED;
+     }
+ 
+@@ -254,6 +256,11 @@
+     {
+         xdg_toplevel_set_min_size(surface->xdg_toplevel, 0, 0);
+         xdg_toplevel_set_max_size(surface->xdg_toplevel, 0, 0);
++        /* A compositor may refuse to maximize or restore a window of fixed
++         * size, and the limits lifted here only count once committed. */
++        if (!(surface->window.state & WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED) !=
++            !(surface->current.state & WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED))
++            wl_surface_commit(surface->wl_surface);
+ 
+          /* First do all state unsettings, before setting new state. Some
+           * Wayland compositors misbehave if the order is reversed. */
+@@ -601,6 +608,23 @@
+         NtUserSetRawWindowPos(hwnd, rect, SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER, FALSE);
+ }
+ 
++/* Whether the rectangle is the work area of its monitor, where that is
++ * smaller than the monitor. Sizes go through the surface scale and back, so
++ * allow for rounding. */
++static BOOL is_work_area_rect(const RECT *rect)
++{
++    MONITORINFO info = {.cbSize = sizeof(info)};
++    HMONITOR monitor;
++
++    if (IsRectEmpty(rect)) return FALSE;
++    if (!(monitor = NtUserMonitorFromRect(rect, MONITOR_DEFAULTTONULL))) return FALSE;
++    if (!NtUserGetMonitorInfo(monitor, &info)) return FALSE;
++    if (EqualRect(&info.rcWork, &info.rcMonitor)) return FALSE;
++
++    return abs(rect->left - info.rcWork.left) <= 2 && abs(rect->top - info.rcWork.top) <= 2 &&
++           abs(rect->right - info.rcWork.right) <= 2 && abs(rect->bottom - info.rcWork.bottom) <= 2;
++}
++
+ /***********************************************************************
+  *           WAYLAND_WindowPosChanged
+  */
+@@ -611,6 +635,7 @@
+     struct wayland_surface *owner_surface;
+     struct wayland_win_data *data, *owner_data;
+     BOOL managed, fullscreen = swp_flags & WINE_SWP_FULLSCREEN;
++    BOOL work_area = !fullscreen && is_work_area_rect(&new_rects->window);
+     BOOL started_move = FALSE;
+     uint32_t button_serial = 0;
+     HWND popup_owner, below = 0;
+@@ -664,6 +689,7 @@
+ 
+     data->rects = *new_rects;
+     data->is_fullscreen = fullscreen;
++    data->is_work_area = work_area;
+     data->resizeable = swp_flags & WINE_SWP_RESIZABLE;
+     data->managed = managed;
+ 
+@@ -716,6 +742,7 @@
+     BOOL needs_enter_size_move = FALSE;
+     BOOL needs_exit_size_move = FALSE;
+     BOOL restoring_from_minimize = FALSE;
++    BOOL work_area;
+     struct wayland_win_data *data;
+     RECT rect, surface_rect;
+ 
+@@ -816,6 +843,8 @@
+     SetRect(&rect, 0, 0, width, height);
+     rect = map_rect_from_surface(surface, rect);
+     OffsetRect(&rect, data->rects.window.left, data->rects.window.top);
++    /* Maximized by taking the work area: the style stays as it is. */
++    work_area = data->is_work_area;
+ 
+     wayland_win_data_release(data);
+ 
+@@ -829,7 +858,8 @@
+ 
+     style = NtUserGetWindowLongW(hwnd, GWL_STYLE);
+     if (!(state & WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED) != !(style & WS_MAXIMIZE)
+-        && !(state & WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN))
++        && !(state & WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN)
++        && !(work_area && (state & WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED)))
+         NtUserSetWindowLong(hwnd, GWL_STYLE, style ^ WS_MAXIMIZE, FALSE);
+ 
+     /* The Wayland maximized and fullscreen states are very strict about

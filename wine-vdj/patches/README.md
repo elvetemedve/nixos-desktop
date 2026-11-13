@@ -154,6 +154,18 @@ tested, what is still open and what Wayland rules out is in
   window grows a pixel or two per motion event, however far the pointer
   went.
 
+- `winewayland-work-area-maximize.patch` — `wayland.c`, `wayland_surface.c`,
+  `display.c`, `window.c`, `waylanddrv.h`. Binds `xdg_wm_base` version 4
+  and reports the size from `xdg_toplevel.configure_bounds` as the
+  monitor's work area, where stock Wine reports the whole monitor. A window
+  sized to exactly the work area is then maximized with
+  `xdg_toplevel_set_maximized`, with the lifted size limits committed
+  first: KWin will neither maximize nor restore a window it still takes for
+  fixed-size. VirtualDJ
+  has no `WS_MAXIMIZE`: its maximized state is a window on the work area,
+  which stock Wine cannot tell from full screen. Wayland does not say where
+  a panel is, so the work area is taken from the monitor's top left.
+
 - `winewayland-touch.patch` — new `wayland_touch.c`, `wayland.c`,
   `waylanddrv.h`, `Makefile.in`. `wl_touch` input sent on as
   `WM_POINTERDOWN/UPDATE/UP`, as winex11 does. **Not in the build:** it
