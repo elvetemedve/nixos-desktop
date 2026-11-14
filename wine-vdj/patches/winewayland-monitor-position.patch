@@ -1,0 +1,14 @@
+diff -urN a/dlls/winewayland.drv/display.c b/dlls/winewayland.drv/display.c
+--- a/dlls/winewayland.drv/display.c	2026-11-14 17:04:53.954519931 +0100
++++ b/dlls/winewayland.drv/display.c	2026-11-14 17:04:53.956570265 +0100
+@@ -275,6 +275,10 @@
+     {
+         DEVMODEW mode = {.dmSize = sizeof(mode)};
+         populate_devmode(output_mode, &mode);
++        /* With a single mode, as most compositors report, win32u takes the
++         * monitor position from the mode list, not from the current mode. */
++        mode.dmFields |= DM_POSITION;
++        mode.dmPosition = current.dmPosition;
+         modes[modes_count++] = mode;
+     }
+ 

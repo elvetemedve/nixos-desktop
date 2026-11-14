@@ -1,12 +1,13 @@
 # winewayland.drv gaps for VirtualDJ
 
 State on 2026-11-12. Wine 11.21, KDE Plasma (KWin 6.8.2), VirtualDJ
-8.5.9729, laptop panel only (120 Hz, scale 1.45, Intel Xe). The reference is
+8.5.9729, laptop panel (120 Hz, scale 1.45, Intel Xe); the last three rows of
+the table also with a TV to its right (scale 2) and the eGPU attached. The reference is
 the X11 driver through XWayland on the same session: anything that behaves
 differently there counts as a gap.
 
 Tested by hand, one traced run per change (`WINEDEBUG=+waylanddrv` plus
-`WAYLAND_DEBUG=1`). Not tested: a second screen or TV, the eGPU, a touchscreen,
+`WAYLAND_DEBUG=1`). Not tested: a touchscreen, stems on the eGPU,
 sessions longer than a few minutes, any compositor other than KWin.
 
 ## Gaps found and patched
@@ -24,10 +25,12 @@ sessions longer than a few minutes, any compositor other than KWin.
 | Subsurface position lags the Win32 position | Editor windows (BPM, POI, track) did not follow a drag, clicks landed in the wrong place, the close button was dead until a resize | new `wayland_surface_place_subsurface`, `wayland_surface_sync_subsurface_position` (`wayland_surface.c`); `wayland_win_data_update_wayland_state` (`window.c`); pointer motion (`wayland_pointer.c`) | 94 | `winewayland-subsurface-pointer` | Confirmed fixed |
 | No stacking order among subsurfaces | The Visuals window's context menu opened underneath it; clicking a lower editor window did not bring it to the front. Stock Wine only ever places a subsurface "above the owner", which is below every other subsurface | new `get_subsurface_below`, `WM_WAYLAND_RAISE`; `WAYLAND_WindowPosChanged` (`window.c`); new `wayland_surface_get_sibling_below`; `wayland_surface_place_subsurface` (`wayland_surface.c`); `pointer_handle_button` (`wayland_pointer.c`) | 81 | `winewayland-subsurface-stacking` | Confirmed fixed |
 | Pointer clamped to the window during a drag | Resizing an editor window by its edge crawled at about 1 px per motion event once the pointer got ahead of the edge (traced: pointer 300 px ahead, every event clamped) | `pointer_handle_motion_internal` (`wayland_pointer.c`): no clamp while a button is held | 12 | `winewayland-grab-pointer` | Confirmed fixed |
-| No work area, so no maximize for self-framed windows | The middle title-bar control only toggled windowed and full screen. VirtualDJ maximizes by sizing its window to the work area, which the driver reported as the whole screen | `registry_handle_global` (`wayland.c`): `xdg_wm_base` v4; new `xdg_toplevel_handle_configure_bounds` (`wayland_surface.c`); `wayland_add_device_monitor` (`display.c`); new `is_work_area_rect`, `wayland_win_data_get_config`, `wayland_surface_update_state_toplevel`, `wayland_configure_window` (`window.c`) | 75 | `winewayland-work-area-maximize` | Confirmed fixed |
+| No work area, so no maximize for self-framed windows | The middle title-bar control only toggled windowed and full screen. VirtualDJ maximizes by sizing its window to the work area, which the driver reported as the whole screen | `registry_handle_global` (`wayland.c`): `xdg_wm_base` v4; new `xdg_toplevel_handle_configure_bounds` (`wayland_surface.c`); `wayland_add_device_monitor` (`display.c`); new `is_work_area_rect`, `wayland_win_data_get_config`, `wayland_surface_update_state_toplevel`, `wayland_configure_window` (`window.c`) | 100 | `winewayland-work-area-maximize` | Confirmed fixed, one and two screens |
+| Second monitor reported at 0,0 | With the TV attached the main window was sized to a 959-pixel strip or never appeared: both monitors lay on top of each other | `wayland_add_device_modes` (`display.c`): position in every mode | 4 | `winewayland-monitor-position` | Confirmed fixed |
+| A toplevel does not know its output; full screen names none | Full screen meant for the TV landed on the laptop at the TV's size and spilled over; maximize and full screen used the wrong monitor after a drag to the other screen | new `wl_surface` listener, `wayland_surface_update_outputs` (`wayland_surface.c`); new `find_output`, `wayland_output_from_rect` (`display.c`); new `wayland_window_follow_output`, `wayland_surface_update_state_toplevel`, `wayland_configure_window` (`window.c`) | 156 | `winewayland-follow-output` | Confirmed fixed |
 | No touchscreen input | None seen: no touchscreen here. The driver has no `wl_touch` code at all | `seat_handle_capabilities` (`wayland.c`); new `wayland_touch.c` sending `WM_POINTERDOWN/UPDATE/UP` as winex11 does | 199 | `winewayland-touch` | Compiles, never run, not in the build |
 
-Total in the build: 706 lines in ten patches. With touch: 905.
+Total in the build: 891 lines in twelve patches. With touch: 1090.
 
 ## Not a driver gap
 
@@ -53,14 +56,15 @@ Total in the build: 706 lines in ten patches. With touch: 905.
    re-reads the outputs (a screen plugged in).
 3. **Closed: resize from an edge was slow.** The pointer clamp above;
    fixed by `winewayland-grab-pointer.patch`.
-4. **Full screen on a chosen output.** `xdg_toplevel_set_fullscreen` is
-   called with no output (`wayland_surface_update_state_toplevel`,
-   `window.c`), so KWin picks the screen. Needed for "skin on the laptop,
-   video on the TV". Estimate 60 to 100 lines. Needs the TV to test.
+4. **Closed: full screen on a chosen output.** Fixed by
+   `winewayland-follow-output.patch`: full screen goes to the output the
+   window is on. Not tried: the Visuals window full screen on the TV with
+   the skin on the laptop.
 5. **Programmatic activation.** No `pActivateWindow`, `xdg_activation_v1` is
    not bound. Focus did return to the main window after closing Settings, so
    no symptom so far. Estimate 80 to 120 lines if one turns up.
-6. **Stems on the eGPU, long sessions.** Not exercised.
+6. **Stems on the eGPU, long sessions.** Not exercised. The eGPU was
+   attached for the two-screen tests, but no stems were run.
 
 ## What Wayland itself rules out
 
@@ -86,9 +90,9 @@ Medium.
 - Everything in the first table was found by using the program, not by
   reading the source: of the eight gaps predicted from the source, three were
   real (scroll, pinch, touch), one was a different bug than predicted (the
-  freeze), and seven new ones appeared only in use.
-- So the untested areas (points 4 and 6, a second screen at another scale,
-  long sessions) should be expected to hold more of the same kind.
+  freeze), and nine new ones appeared only in use.
+- So the untested areas (point 6, the Visuals window on the TV, screens
+  plugged in mid-session, long sessions) should be expected to hold more of the same kind.
 - The patches have been run on KWin only. `winewayland-placed-popups` and
   `winewayland-swap-frame-timeout` depend on compositor behaviour (subsurface
   stacking, when frame callbacks stop) and are the likeliest to behave

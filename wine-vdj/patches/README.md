@@ -165,6 +165,24 @@ tested, what is still open and what Wayland rules out is in
   has no `WS_MAXIMIZE`: its maximized state is a window on the work area,
   which stock Wine cannot tell from full screen. Wayland does not say where
   a panel is, so the work area is taken from the monitor's top left.
+  The maximized state is remembered rather than re-derived when the
+  compositor resizes the window, and a window with no maximize box that the
+  compositor maximizes gets that state instead of `WS_MAXIMIZE`.
+
+- `winewayland-monitor-position.patch` — `display.c`. Puts each monitor's
+  position into its mode list. With one mode per output, as KWin reports,
+  win32u takes the position from that list, where stock Wine leaves it at
+  0,0: a second screen then lies on top of the first, and its usable area
+  comes out as the strip the two do not share.
+
+- `winewayland-follow-output.patch` — `wayland_surface.c`, `window.c`,
+  `display.c`, `waylanddrv.h`. Listens to `wl_surface.enter/leave` and
+  moves a toplevel's Win32 position to the monitor of the output it is
+  really on, so an application asking which monitor its window is on gets
+  the true answer. Full screen is requested on the output the window
+  covers (`xdg_toplevel_set_fullscreen` with an output, where stock Wine
+  passes none), and whether a window is full screen is taken from the
+  compositor, not from a position that is not real.
 
 - `winewayland-touch.patch` — new `wayland_touch.c`, `wayland.c`,
   `waylanddrv.h`, `Makefile.in`. `wl_touch` input sent on as

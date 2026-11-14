@@ -1,6 +1,6 @@
 diff -urN a/dlls/winewayland.drv/display.c b/dlls/winewayland.drv/display.c
---- a/dlls/winewayland.drv/display.c	2026-11-13 23:50:37.908238934 +0100
-+++ b/dlls/winewayland.drv/display.c	2026-11-14 00:05:17.737271430 +0100
+--- a/dlls/winewayland.drv/display.c	2026-11-14 17:04:53.941755836 +0100
++++ b/dlls/winewayland.drv/display.c	2026-11-14 17:04:53.943729504 +0100
 @@ -209,17 +209,34 @@
                                         struct output_info *primary)
  {
@@ -40,8 +40,8 @@ diff -urN a/dlls/winewayland.drv/display.c b/dlls/winewayland.drv/display.c
      device_manager->add_monitor(&monitor, param);
  }
 diff -urN a/dlls/winewayland.drv/wayland.c b/dlls/winewayland.drv/wayland.c
---- a/dlls/winewayland.drv/wayland.c	2026-11-13 23:50:37.908048637 +0100
-+++ b/dlls/winewayland.drv/wayland.c	2026-11-14 00:05:17.737086885 +0100
+--- a/dlls/winewayland.drv/wayland.c	2026-11-14 17:04:53.940865328 +0100
++++ b/dlls/winewayland.drv/wayland.c	2026-11-14 17:04:53.943586830 +0100
 @@ -126,10 +126,11 @@
      else if (strcmp(interface, "xdg_wm_base") == 0)
      {
@@ -57,8 +57,8 @@ diff -urN a/dlls/winewayland.drv/wayland.c b/dlls/winewayland.drv/wayland.c
      }
      else if (strcmp(interface, "wl_shm") == 0)
 diff -urN a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
---- a/dlls/winewayland.drv/waylanddrv.h	2026-11-13 23:50:37.908106464 +0100
-+++ b/dlls/winewayland.drv/waylanddrv.h	2026-11-14 00:05:17.737154271 +0100
+--- a/dlls/winewayland.drv/waylanddrv.h	2026-11-14 17:04:53.941348852 +0100
++++ b/dlls/winewayland.drv/waylanddrv.h	2026-11-14 17:04:53.943637819 +0100
 @@ -219,6 +219,9 @@
      struct wl_list output_list;
      /* Protects the output_list and the wayland_output.current states. */
@@ -69,18 +69,22 @@ diff -urN a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.
      LONG input_serial;
  };
  
-@@ -419,6 +422,8 @@
+@@ -419,6 +422,12 @@
      /* window rects, relative to parent client area */
      struct window_rects rects;
      BOOL is_fullscreen;
-+    /* The window covers its monitor's work area. */
++    /* The window is maximized without WS_MAXIMIZE: the application gave it
++     * its monitor's work area, or the compositor maximized a window that
++     * has no maximize box. */
 +    BOOL is_work_area;
++    /* The window is being resized to a compositor configure. */
++    BOOL in_configure;
      BOOL resizeable;
      BOOL managed;
      BOOL layered_attribs_set;
 diff -urN a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayland_surface.c
---- a/dlls/winewayland.drv/wayland_surface.c	2026-11-13 23:50:37.908071768 +0100
-+++ b/dlls/winewayland.drv/wayland_surface.c	2026-11-14 00:05:17.737113913 +0100
+--- a/dlls/winewayland.drv/wayland_surface.c	2026-11-14 17:04:53.941288590 +0100
++++ b/dlls/winewayland.drv/wayland_surface.c	2026-11-14 17:04:53.943607971 +0100
 @@ -220,10 +220,32 @@
      NtUserPostMessage((HWND)data, WM_SYSCOMMAND, SC_CLOSE, 0);
  }
@@ -116,8 +120,8 @@ diff -urN a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/waylan
  
  void wp_fractional_scale_handle_scale(void* user_data,
 diff -urN a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
---- a/dlls/winewayland.drv/window.c	2026-11-13 23:50:37.908183579 +0100
-+++ b/dlls/winewayland.drv/window.c	2026-11-14 00:05:17.737293118 +0100
+--- a/dlls/winewayland.drv/window.c	2026-11-14 17:04:53.941481950 +0100
++++ b/dlls/winewayland.drv/window.c	2026-11-14 17:04:53.943752247 +0100
 @@ -154,8 +154,10 @@
          else if (!(style & WS_MINIMIZE))
              window_state |= WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN;
@@ -174,15 +178,18 @@ diff -urN a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
      BOOL started_move = FALSE;
      uint32_t button_serial = 0;
      HWND popup_owner, below = 0;
-@@ -664,6 +689,7 @@
+@@ -664,6 +689,10 @@
  
      data->rects = *new_rects;
      data->is_fullscreen = fullscreen;
-+    data->is_work_area = work_area;
++    /* A resize to what the compositor configured does not change what the
++     * application asked for, and with more than one monitor it need not
++     * land on a work area at all. */
++    if (!data->in_configure) data->is_work_area = work_area;
      data->resizeable = swp_flags & WINE_SWP_RESIZABLE;
      data->managed = managed;
  
-@@ -716,6 +742,7 @@
+@@ -716,6 +745,7 @@
      BOOL needs_enter_size_move = FALSE;
      BOOL needs_exit_size_move = FALSE;
      BOOL restoring_from_minimize = FALSE;
@@ -190,16 +197,29 @@ diff -urN a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
      struct wayland_win_data *data;
      RECT rect, surface_rect;
  
-@@ -816,6 +843,8 @@
+@@ -816,6 +846,21 @@
      SetRect(&rect, 0, 0, width, height);
      rect = map_rect_from_surface(surface, rect);
      OffsetRect(&rect, data->rects.window.left, data->rects.window.top);
-+    /* Maximized by taking the work area: the style stays as it is. */
++    /* Maximized by taking the work area: the style stays as it is. The same
++     * for a window with no maximize box that the compositor maximized, as
++     * such a window never has WS_MAXIMIZE and its application would not
++     * know to clear it. */
++    style = NtUserGetWindowLongW(hwnd, GWL_STYLE);
++    if (state & WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN)
++        ;
++    else if (state & WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED)
++    {
++        if (!(style & (WS_MAXIMIZE | WS_MAXIMIZEBOX))) data->is_work_area = TRUE;
++    }
++    else if (surface->current.state & WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED)
++        data->is_work_area = FALSE;
 +    work_area = data->is_work_area;
++    data->in_configure = TRUE;
  
      wayland_win_data_release(data);
  
-@@ -829,7 +858,8 @@
+@@ -829,7 +874,8 @@
  
      style = NtUserGetWindowLongW(hwnd, GWL_STYLE);
      if (!(state & WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED) != !(style & WS_MAXIMIZE)
@@ -209,3 +229,16 @@ diff -urN a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
          NtUserSetWindowLong(hwnd, GWL_STYLE, style ^ WS_MAXIMIZE, FALSE);
  
      /* The Wayland maximized and fullscreen states are very strict about
+@@ -844,6 +890,12 @@
+     }
+ 
+     NtUserSetRawWindowPos(hwnd, rect, flags, FALSE);
++
++    if ((data = wayland_win_data_get(hwnd)))
++    {
++        data->in_configure = FALSE;
++        wayland_win_data_release(data);
++    }
+ }
+ 
+ /**********************************************************************
