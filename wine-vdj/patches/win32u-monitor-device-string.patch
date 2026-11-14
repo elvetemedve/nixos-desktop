@@ -1,0 +1,17 @@
+diff -urN a/dlls/win32u/sysparams.c b/dlls/win32u/sysparams.c
+--- a/dlls/win32u/sysparams.c	2026-11-14 20:45:07.864601698 +0100
++++ b/dlls/win32u/sysparams.c	2026-11-14 20:45:07.872171099 +0100
+@@ -3977,7 +3977,12 @@
+         }
+         if (info->cb >= offsetof(DISPLAY_DEVICEW, DeviceString) + sizeof(info->DeviceString))
+         {
+-            if (monitor) asciiz_to_unicode( info->DeviceString, "Generic Non-PnP Monitor" );
++            /* The name the monitor gives itself, where it has one: Windows
++             * has the monitor's driver name here, and applications show it
++             * to tell one monitor from another. */
++            if (monitor && (monitor->edid_info.flags & MONITOR_INFO_HAS_MONITOR_NAME) && monitor->edid_info.monitor_name[0])
++                lstrcpynW( info->DeviceString, monitor->edid_info.monitor_name, ARRAY_SIZE(info->DeviceString) );
++            else if (monitor) asciiz_to_unicode( info->DeviceString, "Generic Non-PnP Monitor" );
+             else lstrcpynW( info->DeviceString, source->gpu->name, ARRAY_SIZE(info->DeviceString) );
+         }
+         if (info->cb >= offsetof(DISPLAY_DEVICEW, StateFlags) + sizeof(info->StateFlags))

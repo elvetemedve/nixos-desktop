@@ -1,0 +1,99 @@
+diff -urN a/dlls/winewayland.drv/display.c b/dlls/winewayland.drv/display.c
+--- a/dlls/winewayland.drv/display.c	2026-11-14 20:13:13.855033023 +0100
++++ b/dlls/winewayland.drv/display.c	2026-11-14 20:59:57.663255644 +0100
+@@ -32,6 +32,9 @@
+ #include "ntuser.h"
+ 
+ #include <stdlib.h>
++#include <stdio.h>
++#include <string.h>
++#include <dirent.h>
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(waylanddrv);
+ 
+@@ -264,12 +267,70 @@
+     device_manager->add_source(output_info->output->name, state_flags, dpi, param);
+ }
+ 
++/* Wayland does not hand out the EDID, and without one every monitor is a
++ * "Default_Monitor" that applications cannot tell from the next. The
++ * compositor names an output after its kernel connector, whose EDID sysfs
++ * has as /sys/class/drm/card<N>-<name>/edid. */
++/* A built-in panel names itself by its part number, "ATNA53JB01-0", which
++ * tells the user nothing. Give it a plain name in the EDID's display name
++ * descriptor, where applications and win32u look for it. */
++static void set_builtin_panel_name(const char *name, unsigned char *edid)
++{
++    static const char panel_name[] = "Laptop Screen"; /* 13 characters at most */
++    unsigned char *desc, sum = 0;
++    unsigned int i, len = strlen(panel_name);
++
++    if (strncmp(name, "eDP-", 4) && strncmp(name, "LVDS-", 5) && strncmp(name, "DSI-", 4)) return;
++
++    for (i = 0; i < 4; i++)
++    {
++        desc = edid + 54 + i * 18;
++        if (desc[0] || desc[1] || desc[2] || desc[3] != 0xfc) continue;
++        memset(desc + 5, ' ', 13);
++        memcpy(desc + 5, panel_name, len);
++        if (len < 13) desc[5 + len] = '\n';
++        for (i = 0; i < 127; i++) sum += edid[i];
++        edid[127] = -sum;
++        return;
++    }
++}
++
++static unsigned int get_output_edid(const char *name, unsigned char *edid, unsigned int size)
++{
++    static const char drm_dir[] = "/sys/class/drm";
++    unsigned int len = 0;
++    struct dirent *entry;
++    char path[300];
++    const char *p;
++    DIR *dir;
++    FILE *f;
++
++    if (!name || !name[0] || strchr(name, '/') || !(dir = opendir(drm_dir))) return 0;
++
++    while (!len && (entry = readdir(dir)))
++    {
++        if (strncmp(entry->d_name, "card", 4) || !(p = strchr(entry->d_name, '-'))) continue;
++        if (strcmp(p + 1, name)) continue;
++        if (snprintf(path, sizeof(path), "%s/%s/edid", drm_dir, entry->d_name) >= sizeof(path)) continue;
++        if (!(f = fopen(path, "rb"))) continue;
++        len = fread(edid, 1, size, f);
++        fclose(f);
++        /* a whole number of 128 byte blocks, starting with the EDID header */
++        if (len < 128 || len % 128 || memcmp(edid, "\x00\xff\xff\xff\xff\xff\xff\x00", 8)) len = 0;
++    }
++
++    closedir(dir);
++    if (len) set_builtin_panel_name(name, edid);
++    return len;
++}
++
+ static void wayland_add_device_monitor(const struct gdi_device_manager *device_manager,
+                                        void *param, struct output_info *output_info,
+                                        struct output_info *primary)
+ {
+     struct gdi_monitor monitor = {0};
+     int work_width, work_height, logical_w, logical_h;
++    unsigned char edid[1024];
+ 
+     SetRect(&monitor.rc_monitor, output_info->x, output_info->y,
+             output_info->x + output_info->output->current_mode->width,
+@@ -294,9 +355,12 @@
+         monitor.rc_work.bottom = monitor.rc_work.top + (work_height * height + logical_h / 2) / logical_h;
+     }
+ 
+-    TRACE("name=%s rc_monitor=%s rc_work=%s\n",
++    if ((monitor.edid_len = get_output_edid(output_info->output->name, edid, sizeof(edid))))
++        monitor.edid = edid;
++
++    TRACE("name=%s rc_monitor=%s rc_work=%s edid_len=%u\n",
+           output_info->output->name, wine_dbgstr_rect(&monitor.rc_monitor),
+-          wine_dbgstr_rect(&monitor.rc_work));
++          wine_dbgstr_rect(&monitor.rc_work), monitor.edid_len);
+ 
+     device_manager->add_monitor(&monitor, param);
+ }

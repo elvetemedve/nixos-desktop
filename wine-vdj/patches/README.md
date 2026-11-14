@@ -204,6 +204,13 @@ tested, what is still open and what Wayland rules out is in
   Win32 position to its output while full screen is asked for and not yet
   granted.
 
+- `winewayland-monitor-edid.patch` — `display.c`. Hands win32u each
+  monitor's EDID, read from `/sys/class/drm/card*-<output name>/edid`: the
+  compositor names an output after its kernel connector, and Wayland has no
+  EDID of its own to give. Without one every monitor is the same
+  `Default_Monitor`. A built-in panel (`eDP-`, `LVDS-`, `DSI-`) names itself
+  by its part number, so its display name is rewritten to "Laptop Screen".
+
 - `winewayland-touch.patch` — new `wayland_touch.c`, `wayland.c`,
   `waylanddrv.h`, `Makefile.in`. `wl_touch` input sent on as
   `WM_POINTERDOWN/UPDATE/UP`, as winex11 does. **Not in the build:** it
@@ -218,6 +225,13 @@ tested, what is still open and what Wayland rules out is in
   window and Visualization Settings open the GUI stalled for 100 ms at a
   time. Applies under X11 and Wayland alike. The vertical blank is
   approximated from the clock, not taken from the display.
+
+- `win32u-monitor-device-string.patch` — `dlls/win32u/sysparams.c`.
+  `EnumDisplayDevices` gives a monitor's EDID display name as its
+  `DeviceString` where it has one. Wine 11.21 gives "Generic Non-PnP
+  Monitor" for every monitor, and VirtualDJ shows that string to tell the
+  screens apart. Applies under X11 and Wayland alike; on Wayland it needs
+  `winewayland-monitor-edid.patch` to have a name to give.
 
 - `d3d11-texture2d-initial-data-fault.patch` — `dlls/d3d11/texture.c`.
   Catches a page fault while `CreateTexture2D` copies its initial data, lets

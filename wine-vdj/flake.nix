@@ -16,14 +16,16 @@
     kernel32's IsEnclaveTypeSupported, answering "not supported", which
     VirtualDJ 8.5.9729+ calls on every start and which otherwise crashes it
     on Wine's missing-import stub.
-    Fifteen more patches, for the Wayland driver (touchpad scrolling and
+    Sixteen more patches, for the Wayland driver (touchpad scrolling and
     pinch, windows the application drags by itself, size rounding at
-    fractional scales, popup placement, swaps on hidden windows, and
-    owned-window positions and stacking), are built into winewayland.so alone, one,
+    fractional scales, popup placement, swaps on hidden windows,
+    owned-window positions and stacking, and monitor names), are built into
+    winewayland.so alone, one,
     implementing IDXGIOutput::WaitForVBlank so VirtualDJ's frame limiter
-    works, into dxgi.dll alone, and one, which keeps a fault VirtualDJ
-    catches from leaving the wined3d lock held, into d3d11.dll alone. All
-    three are swapped into the full build, so
+    works, into dxgi.dll alone, one, which keeps a fault VirtualDJ
+    catches from leaving the wined3d lock held, into d3d11.dll alone, and
+    one, which reports a monitor's own name, into win32u.so alone. All
+    four are swapped into the full build, so
     they do not need a full Wine rebuild of their own.
     PipeASIO (https://github.com/M0n7y5/pipeasio) provides a low-latency
     ASIO-to-PipeWire audio driver, built here against this same Wine so its
@@ -107,6 +109,7 @@
         ./patches/winewayland-popup-toplevel.patch
         ./patches/winewayland-scale-lock-order.patch
         ./patches/winewayland-fullscreen-retarget.patch
+        ./patches/winewayland-monitor-edid.patch
       ];
 
       # winewayland.so alone, from wine-base's own source, patches,
@@ -193,8 +196,35 @@
         postInstall = "";
       });
 
-      # wine-base with winewayland.so and dxgi.dll replaced by the ones
-      # built above.
+      # And for win32u.so, a unix library like winewayland.so: ntdll.so,
+      # which it links against, is copied in from wine-base.
+      win32uPatches = [
+        ./patches/win32u-monitor-device-string.patch
+      ];
+
+      win32u = wine-base.overrideAttrs (old: {
+        name = "wine-win32u-${wineVersion}";
+        patches = old.patches ++ win32uPatches;
+
+        buildPhase = ''
+          runHook preBuild
+          cp ${wine-base}/lib/wine/x86_64-unix/ntdll.so dlls/ntdll/ntdll.so
+          make -j$NIX_BUILD_CORES -o dlls/ntdll/ntdll.so dlls/win32u/win32u.so
+          runHook postBuild
+        '';
+
+        installPhase = ''
+          runHook preInstall
+          install -Dm755 dlls/win32u/win32u.so \
+            $out/lib/wine/x86_64-unix/win32u.so
+          runHook postInstall
+        '';
+
+        postInstall = "";
+      });
+
+      # wine-base with winewayland.so, dxgi.dll, d3d11.dll and win32u.so
+      # replaced by the ones built above.
       #
       # A symlink tree rather than a copy, except where Wine works out its
       # own location: the loader from /proc/self/exe and ntdll.so from the
@@ -249,6 +279,10 @@
         cp ${dxgi}/lib/wine/x86_64-windows/dxgi.dll \
           "$out/lib/wine/x86_64-windows/dxgi.dll"
 
+        rm "$out/lib/wine/x86_64-unix/win32u.so"
+        cp ${win32u}/lib/wine/x86_64-unix/win32u.so \
+          "$out/lib/wine/x86_64-unix/win32u.so"
+
         rm "$out/lib/wine/x86_64-windows/d3d11.dll"
         cp ${d3d11}/lib/wine/x86_64-windows/d3d11.dll \
           "$out/lib/wine/x86_64-windows/d3d11.dll"
@@ -282,7 +316,7 @@
     in
     {
       packages.${system} = {
-        inherit wine-base winewayland dxgi d3d11 wine-base-patched pipeasio;
+        inherit wine-base winewayland dxgi d3d11 win32u wine-base-patched pipeasio;
 
         # Patched Wine (wine-base-patched, which is wine-base with its
         # rebuilt winewayland.so) with PipeASIO merged into its own lib/wine

@@ -31,9 +31,10 @@ sessions longer than a few minutes, any compositor other than KWin.
 | Popups go with their owner, whatever they open over | The Visuals window's menu was hidden under it in full screen, and on the TV opened far from the pointer | new `get_toplevel_at`, `get_pointer_toplevel`, `toplevel_holds_point`; `get_placed_popup_owner`, `WAYLAND_WindowPosChanged` (`window.c`) | 78 | `winewayland-popup-toplevel` | Confirmed fixed |
 | Lock order in the scale handler | Sending the Visuals window to the other screen froze the program | `wp_fractional_scale_handle_scale` (`wayland_surface.c`) | 5 | `winewayland-scale-lock-order` | No freeze since; the same order remains in `wayland_win_data_create_wayland_surface` |
 | A full-screen window cannot change output | Full-screen Visuals would not move between TV and laptop, and ended up half windowed | `wayland_surface_update_state_toplevel`, `wayland_window_follow_output` (`window.c`) | 23 | `winewayland-fullscreen-retarget` | Confirmed fixed |
+| No EDID, so every monitor is the same `Default_Monitor` | The two screens could not be told apart by name. Wayland has no protocol for the EDID; the compositor names an output after its kernel connector, and sysfs has that connector's EDID | new `get_output_edid`, `set_builtin_panel_name`; `wayland_add_device_monitor` (`display.c`) | 58 | `winewayland-monitor-edid` | Confirmed fixed, together with the win32u patch below |
 | No touchscreen input | None seen: no touchscreen here. The driver has no `wl_touch` code at all | `seat_handle_capabilities` (`wayland.c`); new `wayland_touch.c` sending `WM_POINTERDOWN/UPDATE/UP` as winex11 does | 199 | `winewayland-touch` | Compiles, never run, not in the build |
 
-Total in the build: 997 lines in fifteen patches. With touch: 1196.
+Total in the build: 1055 lines in sixteen patches. With touch: 1254.
 
 ## Not a driver gap
 
@@ -49,6 +50,14 @@ Total in the build: 997 lines in fifteen patches. With touch: 1196.
   holding its global Direct3D lock. Fixed in d3d11 by
   `d3d11-texture2d-initial-data-fault.patch` (20 lines); the guard was seen
   to fire in a session that then went on running.
+- **Both screens named "Generic Non-PnP Monitor".** Half of it is the
+  driver gap in the table (no EDID). The other half is win32u, for every
+  driver: `EnumDisplayDevices` gives that fixed text as a monitor's
+  `DeviceString`, and that is the label VirtualDJ shows. Fixed by
+  `win32u-monitor-device-string.patch` (6 lines), which gives the EDID's
+  display name instead. The screens now read "Laptop Screen" and "LG TV".
+  The Video Output menu offers full screen only on the screen the main
+  window is not on, so its single entry is as intended.
 
 ## Open points
 
@@ -73,10 +82,10 @@ Total in the build: 997 lines in fifteen patches. With touch: 1196.
    no symptom so far. Estimate 80 to 120 lines if one turns up.
 6. **Stems on the eGPU, long sessions.** Not exercised. The eGPU was
    attached for the two-screen tests, but no stems were run.
-7. **Monitor names.** Both screens are "Generic Non-PnP Monitor": the
-   driver passes no EDID. VirtualDJ's video settings then list one screen.
-   The compositor reports make and model per output, so a name could be
-   supplied.
+7. **Closed: monitor names.** See the table and "Not a driver gap". Left
+   over: the EDID is found through sysfs by connector name, which is
+   Linux-only and relies on the compositor using the kernel's names, as
+   KWin does; where it does not, the old name stays.
 8. **Work area unknown when starting in full screen.** KWin then sends no
    `configure_bounds`, so the maximized mode is missing for that session.
 
