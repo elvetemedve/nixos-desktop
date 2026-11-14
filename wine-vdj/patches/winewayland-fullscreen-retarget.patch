@@ -1,0 +1,59 @@
+diff -urN a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
+--- a/dlls/winewayland.drv/waylanddrv.h	2026-11-14 19:59:39.423979987 +0100
++++ b/dlls/winewayland.drv/waylanddrv.h	2026-11-14 19:59:39.426147280 +0100
+@@ -343,6 +343,8 @@
+     HWND above_hwnd;
+     /* the outputs the surface is on, in the order it entered them */
+     struct wl_output *outputs[4];
++    /* the output full screen was last asked for on */
++    struct wl_output *fullscreen_output;
+ };
+ 
+ /**********************************************************************
+diff -urN a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
+--- a/dlls/winewayland.drv/window.c	2026-11-14 19:59:39.424104769 +0100
++++ b/dlls/winewayland.drv/window.c	2026-11-14 19:59:39.426337175 +0100
+@@ -282,13 +282,25 @@
+         {
+             xdg_toplevel_set_maximized(surface->xdg_toplevel);
+         }
+-        if ((surface->window.state & WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN) &&
+-           !(surface->current.state & WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN))
++        if (surface->window.state & WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN)
+         {
+-            /* On the monitor the window covers. */
+-            xdg_toplevel_set_fullscreen(surface->xdg_toplevel,
+-                                        wayland_output_from_rect(&surface->window.rect, NULL));
++            /* On the monitor the window covers; again if it is full screen
++             * already and the application moves it to another monitor. A
++             * compositor may leave a window that is full screen where it
++             * is (KWin does), so that goes by way of not full screen. */
++            struct wl_output *output = wayland_output_from_rect(&surface->window.rect, NULL);
++
++            if (!(surface->current.state & WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN) ||
++                output != surface->fullscreen_output)
++            {
++                if ((surface->current.state & WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN) &&
++                    surface->fullscreen_output)
++                    xdg_toplevel_unset_fullscreen(surface->xdg_toplevel);
++                xdg_toplevel_set_fullscreen(surface->xdg_toplevel, output);
++                surface->fullscreen_output = output;
++            }
+         }
++        else surface->fullscreen_output = NULL;
+         if (surface->window.minimized)
+         {
+             xdg_toplevel_set_minimized(surface->xdg_toplevel);
+@@ -616,7 +628,11 @@
+     POINT offset = {0};
+ 
+     if (!(data = wayland_win_data_get(hwnd))) return;
+-    if ((surface = data->wayland_surface) && wayland_surface_is_toplevel(surface) && !data->app_move)
++    /* Not while full screen has been asked for and not yet granted: the
++     * surface is then still where it was, about to go where the window
++     * already is. */
++    if ((surface = data->wayland_surface) && wayland_surface_is_toplevel(surface) && !data->app_move &&
++        !(data->is_fullscreen && !(surface->current.state & WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN)))
+         wl_output = surface->outputs[0];
+     rect = data->rects.window;
+     wayland_win_data_release(data);

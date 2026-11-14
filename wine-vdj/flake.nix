@@ -16,12 +16,14 @@
     kernel32's IsEnclaveTypeSupported, answering "not supported", which
     VirtualDJ 8.5.9729+ calls on every start and which otherwise crashes it
     on Wine's missing-import stub.
-    Twelve more patches, for the Wayland driver (touchpad scrolling and
+    Fifteen more patches, for the Wayland driver (touchpad scrolling and
     pinch, windows the application drags by itself, size rounding at
     fractional scales, popup placement, swaps on hidden windows, and
-    owned-window positions and stacking), are built into winewayland.so alone, and one,
+    owned-window positions and stacking), are built into winewayland.so alone, one,
     implementing IDXGIOutput::WaitForVBlank so VirtualDJ's frame limiter
-    works, into dxgi.dll alone. Both are swapped into the full build, so
+    works, into dxgi.dll alone, and one, which keeps a fault VirtualDJ
+    catches from leaving the wined3d lock held, into d3d11.dll alone. All
+    three are swapped into the full build, so
     they do not need a full Wine rebuild of their own.
     PipeASIO (https://github.com/M0n7y5/pipeasio) provides a low-latency
     ASIO-to-PipeWire audio driver, built here against this same Wine so its
@@ -102,6 +104,9 @@
         ./patches/winewayland-work-area-maximize.patch
         ./patches/winewayland-monitor-position.patch
         ./patches/winewayland-follow-output.patch
+        ./patches/winewayland-popup-toplevel.patch
+        ./patches/winewayland-scale-lock-order.patch
+        ./patches/winewayland-fullscreen-retarget.patch
       ];
 
       # winewayland.so alone, from wine-base's own source, patches,
@@ -163,6 +168,31 @@
         postInstall = "";
       });
 
+      # And for d3d11.dll.
+      d3d11Patches = [
+        ./patches/d3d11-texture2d-initial-data-fault.patch
+      ];
+
+      d3d11 = wine-base.overrideAttrs (old: {
+        name = "wine-d3d11-${wineVersion}";
+        patches = old.patches ++ d3d11Patches;
+
+        buildPhase = ''
+          runHook preBuild
+          make -j$NIX_BUILD_CORES dlls/d3d11/x86_64-windows/d3d11.dll
+          runHook postBuild
+        '';
+
+        installPhase = ''
+          runHook preInstall
+          install -Dm644 dlls/d3d11/x86_64-windows/d3d11.dll \
+            $out/lib/wine/x86_64-windows/d3d11.dll
+          runHook postInstall
+        '';
+
+        postInstall = "";
+      });
+
       # wine-base with winewayland.so and dxgi.dll replaced by the ones
       # built above.
       #
@@ -218,6 +248,10 @@
         rm "$out/lib/wine/x86_64-windows/dxgi.dll"
         cp ${dxgi}/lib/wine/x86_64-windows/dxgi.dll \
           "$out/lib/wine/x86_64-windows/dxgi.dll"
+
+        rm "$out/lib/wine/x86_64-windows/d3d11.dll"
+        cp ${d3d11}/lib/wine/x86_64-windows/d3d11.dll \
+          "$out/lib/wine/x86_64-windows/d3d11.dll"
       '';
 
       # Built against wine-base's own winegcc/winebuild/widl, so bumping
@@ -248,7 +282,7 @@
     in
     {
       packages.${system} = {
-        inherit wine-base winewayland dxgi wine-base-patched pipeasio;
+        inherit wine-base winewayland dxgi d3d11 wine-base-patched pipeasio;
 
         # Patched Wine (wine-base-patched, which is wine-base with its
         # rebuilt winewayland.so) with PipeASIO merged into its own lib/wine

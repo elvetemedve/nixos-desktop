@@ -1,0 +1,40 @@
+--- a/dlls/d3d11/texture.c	2026-11-14 18:22:47.433484203 +0100
++++ b/dlls/d3d11/texture.c	2026-11-14 18:22:47.438034874 +0100
+@@ -19,6 +19,7 @@
+  */
+ 
+ #include "d3d11_private.h"
++#include "wine/exception.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(d3d11);
+ 
+@@ -1015,9 +1016,26 @@
+         if (desc->MiscFlags & D3D11_RESOURCE_MISC_GDI_COMPATIBLE)
+             flags |= WINED3D_TEXTURE_CREATE_GET_DC;
+ 
+-        if (FAILED(hr = wined3d_texture_create(device->wined3d_device, &wined3d_desc,
+-                desc->ArraySize, levels, flags, (struct wined3d_sub_resource_data *)data,
+-                texture, &d3d_texture2d_wined3d_parent_ops, &texture->wined3d_texture)))
++        /* The initial data is copied with the wined3d lock held. An
++         * application may hand over less memory than the texture needs and
++         * catch the fault; with the lock left held, every other thread that
++         * uses Direct3D then waits for ever. Native has no such lock. The
++         * half-made texture is leaked, not torn down in an unknown state. */
++        __TRY
++        {
++            hr = wined3d_texture_create(device->wined3d_device, &wined3d_desc,
++                    desc->ArraySize, levels, flags, (struct wined3d_sub_resource_data *)data,
++                    texture, &d3d_texture2d_wined3d_parent_ops, &texture->wined3d_texture);
++        }
++        __EXCEPT_PAGE_FAULT
++        {
++            WARN("Fault while reading the initial data %p.\n", data);
++            wined3d_mutex_unlock();
++            return E_INVALIDARG;
++        }
++        __ENDTRY
++
++        if (FAILED(hr))
+         {
+             WARN("Failed to create wined3d texture, hr %#lx.\n", hr);
+             free(texture);

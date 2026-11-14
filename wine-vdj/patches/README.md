@@ -89,7 +89,7 @@ Seven local patches plus one carried from wine-staging. All apply cleanly with
 ## Built per module
 
 These are not in the `patches` list. Each set is built into its one module
-(`winewayland.so`, `dxgi.dll`), which is then swapped into the full build, so
+(`winewayland.so`, `dxgi.dll`, `d3d11.dll`), which is then swapped into the full build, so
 changing one does not rebuild all of Wine.
 
 The `virtualdj` command runs on the Wayland driver, and these patches are
@@ -184,6 +184,26 @@ tested, what is still open and what Wayland rules out is in
   passes none), and whether a window is full screen is taken from the
   compositor, not from a position that is not real.
 
+- `winewayland-popup-toplevel.patch` — `window.c`. Attaches a popup to the
+  toplevel it opens over when that is not its owner: the one the pointer is
+  in, or else the one that holds its top left corner. VirtualDJ's menus are
+  all owned by the main window, so a menu opened from the Visuals window on
+  another screen was placed from the main window's surface, at its scale,
+  and underneath the Visuals window.
+
+- `winewayland-scale-lock-order.patch` — `wayland_surface.c`. The scale
+  handler lets go of the window data before it has win32u update the client
+  surfaces. Stock Wine holds it, while a thread that updates client
+  surfaces from win32u takes the two locks the other way round; a window
+  appearing on a screen of another scale froze the program.
+
+- `winewayland-fullscreen-retarget.patch` — `window.c`, `waylanddrv.h`.
+  Asks for full screen again when a window that is full screen is moved to
+  another monitor, leaving full screen first: KWin keeps a full-screen
+  window on its output otherwise. Also holds back the move of a window's
+  Win32 position to its output while full screen is asked for and not yet
+  granted.
+
 - `winewayland-touch.patch` — new `wayland_touch.c`, `wayland.c`,
   `waylanddrv.h`, `Makefile.in`. `wl_touch` input sent on as
   `WM_POINTERDOWN/UPDATE/UP`, as winex11 does. **Not in the build:** it
@@ -198,6 +218,17 @@ tested, what is still open and what Wayland rules out is in
   window and Visualization Settings open the GUI stalled for 100 ms at a
   time. Applies under X11 and Wayland alike. The vertical blank is
   approximated from the clock, not taken from the display.
+
+- `d3d11-texture2d-initial-data-fault.patch` — `dlls/d3d11/texture.c`.
+  Catches a page fault while `CreateTexture2D` copies its initial data, lets
+  go of the wined3d lock and returns `E_INVALIDARG`. VirtualDJ sometimes
+  hands over less memory than the texture needs and catches the fault
+  itself; on Windows nothing is locked there, in Wine the global wined3d
+  lock stayed held and every thread using Direct3D stopped, the render
+  thread and then the whole program. Seen once a second window (Visuals on
+  the TV) is open and the frame limiter works. The half-made texture is
+  leaked. Other calls that copy application memory under that lock are not
+  guarded.
 
 Delete a patch from `flake.nix`'s `patches` list once its fix lands in
 upstream Wine and the pinned `wine-src` moves past it.

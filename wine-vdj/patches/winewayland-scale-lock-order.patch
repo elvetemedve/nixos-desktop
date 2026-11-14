@@ -1,0 +1,26 @@
+diff -urN a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayland_surface.c
+--- a/dlls/winewayland.drv/wayland_surface.c	2026-11-14 19:49:42.851147181 +0100
++++ b/dlls/winewayland.drv/wayland_surface.c	2026-11-14 19:49:42.853548651 +0100
+@@ -320,9 +320,6 @@
+ 
+     surface->window.scale = scale;
+ 
+-    /* reattach client surfaces as their rects have changed */
+-    update_client_surfaces(hwnd);
+-
+     /* the subsurface rect has changed */
+     if (surface->role == WAYLAND_SURFACE_ROLE_SUBSURFACE)
+     {
+@@ -332,6 +329,12 @@
+ 
+     wayland_win_data_release(data);
+ 
++    /* reattach client surfaces as their rects have changed. Not with the
++     * window data locked: win32u takes its surfaces lock for this, and a
++     * thread that updates client surfaces from win32u holds that lock when
++     * it comes for the window data. */
++    update_client_surfaces(hwnd);
++
+     NtUserExposeWindowSurface(hwnd, 0, NULL);
+ }
+ 

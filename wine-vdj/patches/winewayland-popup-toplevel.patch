@@ -1,0 +1,128 @@
+diff -urN a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
+--- a/dlls/winewayland.drv/window.c	2026-11-14 19:49:42.838261971 +0100
++++ b/dlls/winewayland.drv/window.c	2026-11-14 19:49:42.839592222 +0100
+@@ -440,6 +440,71 @@
+ }
+ 
+ /***********************************************************************
++ *           get_toplevel_at
++ *
++ * The visible toplevel, other than the given window, that holds a point,
++ * preferably the foreground one.
++ */
++static HWND get_toplevel_at(HWND hwnd, int x, int y)
++{
++    HWND foreground = NtUserGetAncestor(NtUserGetForegroundWindow(), GA_ROOT), ret = 0;
++    struct wayland_win_data *data;
++    POINT pt = {x, y};
++
++    pthread_mutex_lock(&win_data_mutex);
++    RB_FOR_EACH_ENTRY(data, &win_data_rb, struct wayland_win_data, entry)
++    {
++        struct wayland_surface *surface = data->wayland_surface;
++
++        if (data->hwnd == hwnd || !surface || !wayland_surface_is_toplevel(surface)) continue;
++        if (!surface->window.visible || !PtInRect(&data->rects.window, pt)) continue;
++        if (!ret || data->hwnd == foreground) ret = data->hwnd;
++    }
++    pthread_mutex_unlock(&win_data_mutex);
++
++    return ret;
++}
++
++/* Whether a toplevel of ours holds a point: 1 if so, 0 if not, -1 if the
++ * window is not a toplevel. */
++static int toplevel_holds_point(HWND hwnd, int x, int y)
++{
++    struct wayland_win_data *data;
++    POINT pt = {x, y};
++    int ret = -1;
++
++    if (!(data = wayland_win_data_get(hwnd))) return -1;
++    if (data->wayland_surface && wayland_surface_is_toplevel(data->wayland_surface))
++        ret = PtInRect(&data->rects.window, pt);
++    wayland_win_data_release(data);
++    return ret;
++}
++
++/* The window whose surface the given window's surface hangs from in the
++ * end, itself if it is no subsurface. */
++static HWND get_root_surface_window(HWND hwnd)
++{
++    unsigned int limit = 8;
++    HWND owner;
++
++    while (hwnd && limit-- && (owner = get_subsurface_owner(hwnd))) hwnd = owner;
++    return hwnd;
++}
++
++/* The toplevel the pointer is in. */
++static HWND get_pointer_toplevel(void)
++{
++    struct wayland_pointer *pointer = &process_wayland.pointer;
++    HWND hwnd;
++
++    pthread_mutex_lock(&pointer->mutex);
++    hwnd = pointer->focused_hwnd;
++    pthread_mutex_unlock(&pointer->mutex);
++
++    return get_root_surface_window(hwnd);
++}
++
++/***********************************************************************
+  *           get_placed_popup_owner
+  *
+  * The window to place a popup relative to, if there is one.
+@@ -449,7 +514,7 @@
+  * where the application wants it. As a subsurface of one of our toplevels
+  * it can be placed exactly.
+  */
+-static HWND get_placed_popup_owner(HWND hwnd, HWND owner_hint)
++static HWND get_placed_popup_owner(HWND hwnd, HWND owner_hint, const RECT *rect)
+ {
+     HWND owner;
+ 
+@@ -457,6 +522,10 @@
+ 
+     /* The owner, or failing that the window the popup is on top of. */
+     if ((owner = owner_hint) && owner != hwnd && wayland_win_data_exists(owner)) return owner;
++    /* The toplevel it opens over. With more than one, on different outputs,
++     * a menu belongs to the one it was opened from, which need not be the
++     * one that has the focus. */
++    if ((owner = get_toplevel_at(hwnd, rect->left, rect->top))) return owner;
+     /* The window we attached it to before. */
+     if ((owner = get_subsurface_owner(hwnd)) && wayland_win_data_exists(owner)) return owner;
+     /* The window the user is working in. */
+@@ -699,12 +768,30 @@
+      * may need to query win_data information about other HWNDs and thus
+      * acquire the lock itself internally. */
+     managed = is_window_managed(hwnd, swp_flags, fullscreen);
+-    if (managed && surface && !fullscreen && (popup_owner = get_placed_popup_owner(hwnd, owner_hint)))
++    if (managed && surface && !fullscreen && (popup_owner = get_placed_popup_owner(hwnd, owner_hint, &new_rects->window)))
+     {
+         managed = FALSE;
+         owner_hint = popup_owner;
+     }
+-    if (!managed && surface) owner = owner_hint;
++    if (!managed && surface)
++    {
++        HWND over;
++
++        owner = owner_hint;
++        /* A popup that opens outside its owner and over another of our
++         * toplevels goes with that one: a menu owned by the main window but
++         * opened from a window on another output would otherwise be placed
++         * from the wrong surface, at the wrong scale, and under the window
++         * it belongs to. Where two toplevels hold the point, as with a
++         * full-screen window over another, it is the one the pointer is
++         * in: a menu follows a click. */
++        if (owner && (over = get_pointer_toplevel()) && over != hwnd && over != get_root_surface_window(owner) &&
++            toplevel_holds_point(over, new_rects->window.left, new_rects->window.top) == 1)
++            owner = over;
++        else if (owner && !toplevel_holds_point(owner, new_rects->window.left, new_rects->window.top) &&
++            (over = get_toplevel_at(hwnd, new_rects->window.left, new_rects->window.top)) && over != owner)
++            owner = over;
++    }
+ 
+     /* Where a subsurface goes among the others of its owner, when it is
+      * new there or its place in the z-order may have changed. */

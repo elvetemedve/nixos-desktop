@@ -1,7 +1,7 @@
 # winewayland.drv gaps for VirtualDJ
 
 State on 2026-11-12. Wine 11.21, KDE Plasma (KWin 6.8.2), VirtualDJ
-8.5.9729, laptop panel (120 Hz, scale 1.45, Intel Xe); the last three rows of
+8.5.9729, laptop panel (120 Hz, scale 1.45, Intel Xe); the last six rows of
 the table also with a TV to its right (scale 2) and the eGPU attached. The reference is
 the X11 driver through XWayland on the same session: anything that behaves
 differently there counts as a gap.
@@ -28,9 +28,12 @@ sessions longer than a few minutes, any compositor other than KWin.
 | No work area, so no maximize for self-framed windows | The middle title-bar control only toggled windowed and full screen. VirtualDJ maximizes by sizing its window to the work area, which the driver reported as the whole screen | `registry_handle_global` (`wayland.c`): `xdg_wm_base` v4; new `xdg_toplevel_handle_configure_bounds` (`wayland_surface.c`); `wayland_add_device_monitor` (`display.c`); new `is_work_area_rect`, `wayland_win_data_get_config`, `wayland_surface_update_state_toplevel`, `wayland_configure_window` (`window.c`) | 100 | `winewayland-work-area-maximize` | Confirmed fixed, one and two screens |
 | Second monitor reported at 0,0 | With the TV attached the main window was sized to a 959-pixel strip or never appeared: both monitors lay on top of each other | `wayland_add_device_modes` (`display.c`): position in every mode | 4 | `winewayland-monitor-position` | Confirmed fixed |
 | A toplevel does not know its output; full screen names none | Full screen meant for the TV landed on the laptop at the TV's size and spilled over; maximize and full screen used the wrong monitor after a drag to the other screen | new `wl_surface` listener, `wayland_surface_update_outputs` (`wayland_surface.c`); new `find_output`, `wayland_output_from_rect` (`display.c`); new `wayland_window_follow_output`, `wayland_surface_update_state_toplevel`, `wayland_configure_window` (`window.c`) | 156 | `winewayland-follow-output` | Confirmed fixed |
+| Popups go with their owner, whatever they open over | The Visuals window's menu was hidden under it in full screen, and on the TV opened far from the pointer | new `get_toplevel_at`, `get_pointer_toplevel`, `toplevel_holds_point`; `get_placed_popup_owner`, `WAYLAND_WindowPosChanged` (`window.c`) | 78 | `winewayland-popup-toplevel` | Confirmed fixed |
+| Lock order in the scale handler | Sending the Visuals window to the other screen froze the program | `wp_fractional_scale_handle_scale` (`wayland_surface.c`) | 5 | `winewayland-scale-lock-order` | No freeze since; the same order remains in `wayland_win_data_create_wayland_surface` |
+| A full-screen window cannot change output | Full-screen Visuals would not move between TV and laptop, and ended up half windowed | `wayland_surface_update_state_toplevel`, `wayland_window_follow_output` (`window.c`) | 23 | `winewayland-fullscreen-retarget` | Confirmed fixed |
 | No touchscreen input | None seen: no touchscreen here. The driver has no `wl_touch` code at all | `seat_handle_capabilities` (`wayland.c`); new `wayland_touch.c` sending `WM_POINTERDOWN/UPDATE/UP` as winex11 does | 199 | `winewayland-touch` | Compiles, never run, not in the build |
 
-Total in the build: 891 lines in twelve patches. With touch: 1090.
+Total in the build: 997 lines in fifteen patches. With touch: 1196.
 
 ## Not a driver gap
 
@@ -41,6 +44,11 @@ Total in the build: 891 lines in twelve patches. With touch: 1090.
   `dxgi-output-waitforvblank.patch` (34 lines), confirmed under X11. A side
   effect is that the `skinFPS` setting now takes effect: with `skinFPS` 30 the
   skin draws at 30 fps where it used to run at about 115.
+- **Freeze with the Visuals window on a second screen.** Same under X11.
+  VirtualDJ catches a page fault in `CreateTexture2D`, and Wine was left
+  holding its global Direct3D lock. Fixed in d3d11 by
+  `d3d11-texture2d-initial-data-fault.patch` (20 lines); the guard was seen
+  to fire in a session that then went on running.
 
 ## Open points
 
@@ -58,13 +66,19 @@ Total in the build: 891 lines in twelve patches. With touch: 1090.
    fixed by `winewayland-grab-pointer.patch`.
 4. **Closed: full screen on a chosen output.** Fixed by
    `winewayland-follow-output.patch`: full screen goes to the output the
-   window is on. Not tried: the Visuals window full screen on the TV with
-   the skin on the laptop.
+   window is on. Tried with the Visuals window full screen on the TV and the
+   skin on the laptop, and moved between the two from its menu.
 5. **Programmatic activation.** No `pActivateWindow`, `xdg_activation_v1` is
    not bound. Focus did return to the main window after closing Settings, so
    no symptom so far. Estimate 80 to 120 lines if one turns up.
 6. **Stems on the eGPU, long sessions.** Not exercised. The eGPU was
    attached for the two-screen tests, but no stems were run.
+7. **Monitor names.** Both screens are "Generic Non-PnP Monitor": the
+   driver passes no EDID. VirtualDJ's video settings then list one screen.
+   The compositor reports make and model per output, so a name could be
+   supplied.
+8. **Work area unknown when starting in full screen.** KWin then sends no
+   `configure_bounds`, so the maximized mode is missing for that session.
 
 ## What Wayland itself rules out
 
@@ -90,9 +104,9 @@ Medium.
 - Everything in the first table was found by using the program, not by
   reading the source: of the eight gaps predicted from the source, three were
   real (scroll, pinch, touch), one was a different bug than predicted (the
-  freeze), and nine new ones appeared only in use.
-- So the untested areas (point 6, the Visuals window on the TV, screens
-  plugged in mid-session, long sessions) should be expected to hold more of the same kind.
+  freeze), and twelve new ones appeared only in use.
+- So the untested areas (point 6, screens plugged in mid-session, long
+  sessions) should be expected to hold more of the same kind.
 - The patches have been run on KWin only. `winewayland-placed-popups` and
   `winewayland-swap-frame-timeout` depend on compositor behaviour (subsurface
   stacking, when frame callbacks stop) and are the likeliest to behave
