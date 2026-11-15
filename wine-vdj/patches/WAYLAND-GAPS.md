@@ -22,6 +22,7 @@ sessions longer than a few minutes, any compositor other than KWin.
 | Unowned popups cannot be placed | Dropdowns and menus opened wherever KWin put them | new `is_placed_popup`, `get_placed_popup_owner`, `get_subsurface_owner` (`window.c`): make them subsurfaces of the window under them | 70 | `winewayland-placed-popups` | Confirmed fixed |
 | No pinch gestures | Pinch did not zoom waveforms or the BPM editor | `registry_handle_global` (`wayland.c`); `wayland_pointer_init/deinit` and new pinch begin/update/end listeners (`wayland_pointer.c`); binds `zwp_pointer_gestures_v1` | 88 | `winewayland-pinch-to-wheel` | Confirmed fixed |
 | Swap blocks on a surface the compositor does not draw | Closing the track editor hung the program; a hidden Visuals window froze the whole GUI, because one wined3d thread draws every window | `wayland_drawable_wait_frame`, `wayland_drawable_swap` (`opengl.c`): 100 ms timeout, then no waiting until frame callbacks return | 88 | `winewayland-swap-frame-timeout` | Confirmed fixed; see open point 1 |
+| The swap timeout could run to ten times its length, and a hidden window still waited once | Closing the Visuals picker stopped the skin for about a second (961 ms traced) | `wayland_drawable_wait_frame` (`opengl.c`): time counted over the whole wait; no wait for a window that is not visible | 20 | `winewayland-frame-wait-deadline` | Confirmed fixed |
 | Subsurface position lags the Win32 position | Editor windows (BPM, POI, track) did not follow a drag, clicks landed in the wrong place, the close button was dead until a resize | new `wayland_surface_place_subsurface`, `wayland_surface_sync_subsurface_position` (`wayland_surface.c`); `wayland_win_data_update_wayland_state` (`window.c`); pointer motion (`wayland_pointer.c`) | 94 | `winewayland-subsurface-pointer` | Confirmed fixed |
 | No stacking order among subsurfaces | The Visuals window's context menu opened underneath it; clicking a lower editor window did not bring it to the front. Stock Wine only ever places a subsurface "above the owner", which is below every other subsurface | new `get_subsurface_below`, `WM_WAYLAND_RAISE`; `WAYLAND_WindowPosChanged` (`window.c`); new `wayland_surface_get_sibling_below`; `wayland_surface_place_subsurface` (`wayland_surface.c`); `pointer_handle_button` (`wayland_pointer.c`) | 81 | `winewayland-subsurface-stacking` | Confirmed fixed |
 | Pointer clamped to the window during a drag | Resizing an editor window by its edge crawled at about 1 px per motion event once the pointer got ahead of the edge (traced: pointer 300 px ahead, every event clamped) | `pointer_handle_motion_internal` (`wayland_pointer.c`): no clamp while a button is held | 12 | `winewayland-grab-pointer` | Confirmed fixed |
@@ -34,7 +35,7 @@ sessions longer than a few minutes, any compositor other than KWin.
 | No EDID, so every monitor is the same `Default_Monitor` | The two screens could not be told apart by name. Wayland has no protocol for the EDID; the compositor names an output after its kernel connector, and sysfs has that connector's EDID | new `get_output_edid`, `set_builtin_panel_name`; `wayland_add_device_monitor` (`display.c`) | 58 | `winewayland-monitor-edid` | Confirmed fixed, together with the win32u patch below |
 | No touchscreen input | None seen: no touchscreen here. The driver has no `wl_touch` code at all | `seat_handle_capabilities` (`wayland.c`); new `wayland_touch.c` sending `WM_POINTERDOWN/UPDATE/UP` as winex11 does | 199 | `winewayland-touch` | Compiles, never run, not in the build |
 
-Total in the build: 1055 lines in sixteen patches. With touch: 1254.
+Total in the build: 1075 lines in seventeen patches. With touch: 1274.
 
 ## Not a driver gap
 
@@ -58,6 +59,20 @@ Total in the build: 1055 lines in sixteen patches. With touch: 1254.
   display name instead. The screens now read "Laptop Screen" and "LG TV".
   The Video Output menu offers full screen only on the screen the main
   window is not on, so its single entry is as intended.
+- **Empty MASTER VIDEO box.** Same under X11, and it never worked on Linux.
+  VirtualDJ shares a texture between its video device and the skin's
+  device; `GetSharedHandle` and `OpenSharedResource` are stubs in Wine.
+  Fixed for two devices of one process, by copying, in
+  `dxgi-shared-handle.patch` (15 lines) and `d3d11-shared-texture.patch`
+  (233 lines). Confirmed: the box shows the video in Preview Only and with
+  the TV, and the skin stays smooth.
+- **Noise for thumbnails in the Visuals picker.** Same under X11. The
+  thumbnails are NV12 textures, which wined3d's OpenGL renderer cannot
+  make. Fixed for textures that shaders only read by
+  `d3d11-nv12-planes.patch` (83 lines). Confirmed clean. The Vulkan
+  renderer makes NV12 textures by itself, but crashed here in
+  `vkAcquireNextImageKHR` when the video was switched off, and would put
+  the skin on the eGPU.
 
 ## Open points
 

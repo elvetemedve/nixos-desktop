@@ -1,0 +1,400 @@
+diff -u a/dlls/d3d11/d3d11_private.h b/dlls/d3d11/d3d11_private.h
+--- a/dlls/d3d11/d3d11_private.h	2026-11-14 21:48:34.020924068 +0100
++++ b/dlls/d3d11/d3d11_private.h	2026-11-15 01:14:28.482970345 +0100
+@@ -37,6 +37,7 @@
+ #include "wine/wined3d.h"
+ #include "wine/winedxgi.h"
+ #include "wine/rbtree.h"
++#include "wine/list.h"
+ 
+ struct d3d_device;
+ 
+@@ -143,6 +144,19 @@
+     struct wined3d_swapchain *swapchain;
+     D3D11_TEXTURE2D_DESC desc;
+     ID3D11Device5 *device;
++
++    /* A texture made with D3D11_RESOURCE_MISC_SHARED is listed, to be found
++     * by its handle. Opened on another device it gets a copy there, which
++     * holds a reference to it as its shared_source; shared_staging is the
++     * texture of the source's own device its content is read back through,
++     * and shared_query tells when the content has arrived there. */
++    struct list shared_entry;
++    struct list shared_copies;
++    struct list shared_copy_entry;
++    struct d3d_texture2d *shared_source;
++    struct d3d_texture2d *shared_staging;
++    struct d3d_query *shared_query;
++    BOOL shared_staging_valid;
+ };
+ 
+ static inline struct d3d_texture2d *impl_from_ID3D11Texture2D(ID3D11Texture2D *iface)
+@@ -154,6 +168,8 @@
+         struct wined3d_texture *wined3d_texture,
+         const D3D11_SUBRESOURCE_DATA *data, struct d3d_texture2d **out);
+ struct d3d_texture2d *unsafe_impl_from_ID3D11Texture2D(ID3D11Texture2D *iface);
++HRESULT d3d_texture2d_open_shared(struct d3d_device *device, HANDLE handle, struct d3d_texture2d **out);
++void d3d_texture2d_push_shared(struct d3d_texture2d *source);
+ struct d3d_texture2d *unsafe_impl_from_ID3D10Texture2D(ID3D10Texture2D *iface);
+ 
+ /* ID3D11Texture3D, ID3D10Texture3D */
+@@ -223,6 +239,8 @@
+     D3D11_RENDER_TARGET_VIEW_DESC desc;
+     ID3D11Resource *resource;
+     ID3D11Device5 *device;
++    /* Set for a view of a D3D11_RESOURCE_MISC_SHARED texture. */
++    struct d3d_texture2d *shared_texture;
+ };
+ 
+ HRESULT d3d_rendertarget_view_create(struct d3d_device *device, ID3D11Resource *resource,
+@@ -562,6 +580,8 @@
+     D3D11_DEVICE_CONTEXT_TYPE type;
+     struct wined3d_device_context *wined3d_context;
+     struct d3d_device *device;
++    /* The shared texture that is the first render target, if one is. */
++    struct d3d_texture2d *shared_target;
+ 
+     struct wined3d_private_store private_store;
+ };
+diff -u a/dlls/d3d11/device.c b/dlls/d3d11/device.c
+--- a/dlls/d3d11/device.c	2026-11-14 21:48:34.020972076 +0100
++++ b/dlls/d3d11/device.c	2026-11-14 22:24:42.728095588 +0100
+@@ -1084,6 +1084,23 @@
+     d3d11_device_context_set_samplers(iface, WINED3D_SHADER_TYPE_GEOMETRY, start_slot, sampler_count, samplers);
+ }
+ 
++/* A shared texture is copied to the devices that opened it when the
++ * application has finished drawing to it, which it shows by taking it off
++ * as render target. */
++static void d3d11_device_context_set_shared_target(struct d3d11_device_context *context,
++        ID3D11RenderTargetView *view)
++{
++    struct d3d_rendertarget_view *rtv = unsafe_impl_from_ID3D11RenderTargetView(view);
++    struct d3d_texture2d *previous = context->shared_target;
++
++    if (context->type != D3D11_DEVICE_CONTEXT_IMMEDIATE)
++        return;
++
++    context->shared_target = rtv ? rtv->shared_texture : NULL;
++    if (previous && previous != context->shared_target)
++        d3d_texture2d_push_shared(previous);
++}
++
+ static void STDMETHODCALLTYPE d3d11_device_context_OMSetRenderTargets(ID3D11DeviceContext4 *iface,
+         UINT rtv_count, ID3D11RenderTargetView *const *rtvs, ID3D11DepthStencilView *depth_stencil_view)
+ {
+@@ -1111,6 +1128,7 @@
+ 
+     wined3d_device_context_set_render_targets_and_unordered_access_views(context->wined3d_context,
+             ARRAY_SIZE(wined3d_rtvs), wined3d_rtvs, dsv ? dsv->wined3d_view : NULL, ~0u, NULL, NULL);
++    d3d11_device_context_set_shared_target(context, rtv_count ? rtvs[0] : NULL);
+ }
+ 
+ static void STDMETHODCALLTYPE d3d11_device_context_OMSetRenderTargetsAndUnorderedAccessViews(
+@@ -1146,6 +1164,8 @@
+ 
+             wined3d_rtvs[i] = rtv ? rtv->wined3d_view : NULL;
+         }
++        d3d11_device_context_set_shared_target(context,
++                render_target_view_count ? render_target_views[0] : NULL);
+     }
+ 
+     if (uav_count == D3D11_KEEP_UNORDERED_ACCESS_VIEWS)
+@@ -4625,9 +4645,21 @@
+ static HRESULT STDMETHODCALLTYPE d3d11_device_OpenSharedResource(ID3D11Device5 *iface, HANDLE resource, REFIID iid,
+         void **out)
+ {
+-    FIXME("iface %p, resource %p, iid %s, out %p stub!\n", iface, resource, debugstr_guid(iid), out);
++    struct d3d_device *device = impl_from_ID3D11Device5(iface);
++    struct d3d_texture2d *texture;
++    HRESULT hr;
+ 
+-    return E_NOTIMPL;
++    TRACE("iface %p, resource %p, iid %s, out %p.\n", iface, resource, debugstr_guid(iid), out);
++
++    if (FAILED(hr = d3d_texture2d_open_shared(device, resource, &texture)))
++    {
++        FIXME("Failed to open shared resource %p, hr %#lx.\n", resource, hr);
++        return hr;
++    }
++
++    hr = ID3D11Texture2D_QueryInterface(&texture->ID3D11Texture2D_iface, iid, out);
++    ID3D11Texture2D_Release(&texture->ID3D11Texture2D_iface);
++    return hr;
+ }
+ 
+ static HRESULT STDMETHODCALLTYPE d3d11_device_CheckFormatSupport(ID3D11Device5 *iface, DXGI_FORMAT format,
+diff -u a/dlls/d3d11/texture.c b/dlls/d3d11/texture.c
+--- a/dlls/d3d11/texture.c	2026-11-14 21:48:34.019144460 +0100
++++ b/dlls/d3d11/texture.c	2026-11-15 01:14:28.484119937 +0100
+@@ -23,6 +23,9 @@
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(d3d11);
+ 
++/* Textures made with D3D11_RESOURCE_MISC_SHARED; wined3d lock. */
++static struct list shared_textures = LIST_INIT(shared_textures);
++
+ /* ID3D11Texture1D methods */
+ 
+ static inline struct d3d_texture1d *impl_from_ID3D11Texture1D(ID3D11Texture1D *iface)
+@@ -574,11 +577,32 @@
+     if (!refcount)
+     {
+         ID3D11Device5 *device = texture->device;
++        struct d3d_texture2d *source, *staging;
++        struct d3d_query *query;
++
++        wined3d_mutex_lock();
++        source = texture->shared_source;
++        staging = texture->shared_staging;
++        query = texture->shared_query;
++        texture->shared_source = NULL;
++        texture->shared_staging = NULL;
++        texture->shared_query = NULL;
++        texture->shared_staging_valid = FALSE;
++        list_remove(&texture->shared_copy_entry);
++        list_init(&texture->shared_copy_entry);
++        wined3d_mutex_unlock();
++
+         if (texture->swapchain)
+             wined3d_swapchain_decref(texture->swapchain);
+         /* Releasing the texture may free the d3d11 object, so do not access it
+          * after releasing the texture. */
+         wined3d_texture_decref(texture->wined3d_texture);
++        if (query)
++            ID3D11Query_Release(&query->ID3D11Query_iface);
++        if (staging)
++            ID3D11Texture2D_Release(&staging->ID3D11Texture2D_iface);
++        if (source)
++            ID3D11Texture2D_Release(&source->ID3D11Texture2D_iface);
+         /* Release the device last, it may cause the wined3d device to be
+          * destroyed. */
+         ID3D11Device5_Release(device);
+@@ -751,6 +775,10 @@
+ {
+     struct d3d_texture2d *texture = parent;
+ 
++    wined3d_mutex_lock();
++    list_remove(&texture->shared_entry);
++    wined3d_mutex_unlock();
++
+     if (texture->dxgi_resource) IUnknown_Release(texture->dxgi_resource);
+     free(texture);
+ }
+@@ -980,6 +1008,9 @@
+     texture->ID3D11Texture2D_iface.lpVtbl = &d3d11_texture2d_vtbl;
+     texture->ID3D10Texture2D_iface.lpVtbl = &d3d10_texture2d_vtbl;
+     texture->refcount = 1;
++    list_init(&texture->shared_entry);
++    list_init(&texture->shared_copies);
++    list_init(&texture->shared_copy_entry);
+     wined3d_mutex_lock();
+     texture->desc = *desc;
+ 
+@@ -1058,6 +1089,8 @@
+         wined3d_mutex_unlock();
+         return hr;
+     }
++    if ((desc->MiscFlags & D3D11_RESOURCE_MISC_SHARED) && !wined3d_texture)
++        list_add_tail(&shared_textures, &texture->shared_entry);
+     wined3d_mutex_unlock();
+ 
+     ID3D11Device5_AddRef(texture->device = &device->ID3D11Device5_iface);
+@@ -1068,6 +1101,170 @@
+     return S_OK;
+ }
+ 
++/* Wine has no shared resources. Two devices of one process are served by
++ * giving the opening device a texture of its own and copying into it. */
++HRESULT d3d_texture2d_open_shared(struct d3d_device *device, HANDLE handle, struct d3d_texture2d **out)
++{
++    static const D3D11_QUERY_DESC query_desc = {D3D11_QUERY_EVENT, 0};
++    struct d3d_texture2d *source = NULL, *staging = NULL, *texture, *cursor;
++    struct d3d_query *query = NULL;
++    D3D11_TEXTURE2D_DESC desc;
++    HRESULT hr;
++
++    wined3d_mutex_lock();
++    LIST_FOR_EACH_ENTRY(cursor, &shared_textures, struct d3d_texture2d, shared_entry)
++    {
++        if (wined3d_texture_get_resource(cursor->wined3d_texture) == handle && cursor->refcount)
++        {
++            source = cursor;
++            ID3D11Texture2D_AddRef(&source->ID3D11Texture2D_iface);
++            break;
++        }
++    }
++    wined3d_mutex_unlock();
++
++    if (!source)
++        return E_INVALIDARG;
++
++    if (source->device == &device->ID3D11Device5_iface)
++    {
++        *out = source;
++        return S_OK;
++    }
++
++    desc = source->desc;
++    if (desc.MipLevels != 1 || desc.ArraySize != 1 || desc.SampleDesc.Count > 1)
++    {
++        FIXME("Unhandled shared texture, %u levels, %u layers, %u samples.\n",
++                desc.MipLevels, desc.ArraySize, desc.SampleDesc.Count);
++        ID3D11Texture2D_Release(&source->ID3D11Texture2D_iface);
++        return E_NOTIMPL;
++    }
++
++    if (!source->shared_staging)
++    {
++        desc.Usage = D3D11_USAGE_STAGING;
++        desc.BindFlags = 0;
++        desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
++        desc.MiscFlags = 0;
++        if (FAILED(hr = d3d_texture2d_create(impl_from_ID3D11Device5(source->device),
++                &desc, NULL, NULL, &staging)))
++        {
++            ID3D11Texture2D_Release(&source->ID3D11Texture2D_iface);
++            return hr;
++        }
++        if (FAILED(hr = d3d_query_create(impl_from_ID3D11Device5(source->device),
++                &query_desc, FALSE, &query)))
++        {
++            ID3D11Texture2D_Release(&staging->ID3D11Texture2D_iface);
++            ID3D11Texture2D_Release(&source->ID3D11Texture2D_iface);
++            return hr;
++        }
++    }
++
++    desc = source->desc;
++    desc.MiscFlags &= ~D3D11_RESOURCE_MISC_SHARED;
++    if (FAILED(hr = d3d_texture2d_create(device, &desc, NULL, NULL, &texture)))
++    {
++        if (query)
++            ID3D11Query_Release(&query->ID3D11Query_iface);
++        if (staging)
++            ID3D11Texture2D_Release(&staging->ID3D11Texture2D_iface);
++        ID3D11Texture2D_Release(&source->ID3D11Texture2D_iface);
++        return hr;
++    }
++
++    wined3d_mutex_lock();
++    texture->desc.MiscFlags = source->desc.MiscFlags;
++    texture->shared_source = source;
++    list_add_tail(&source->shared_copies, &texture->shared_copy_entry);
++    if (staging && !source->shared_staging)
++    {
++        source->shared_staging = staging;
++        source->shared_query = query;
++        staging = NULL;
++        query = NULL;
++    }
++    wined3d_mutex_unlock();
++    if (query)
++        ID3D11Query_Release(&query->ID3D11Query_iface);
++    if (staging)
++        ID3D11Texture2D_Release(&staging->ID3D11Texture2D_iface);
++
++    TRACE("Opened %ux%u texture %p as copy %p.\n", desc.Width, desc.Height, source, texture);
++    *out = texture;
++    return S_OK;
++}
++
++/* Brings the copies of a shared texture up to date. Reading a texture back
++ * waits for the thread that draws for its device, with the wined3d lock
++ * held, so this is done by the thread that drew to the texture and not by
++ * the ones that use the copies. It also hands on what an earlier call
++ * asked for and only then asks for the present content, and it does
++ * neither until the drawing thread has got as far as the earlier request:
++ * the copies are a frame or more late and the wait is short. */
++void d3d_texture2d_push_shared(struct d3d_texture2d *source)
++{
++    struct wined3d_resource *src, *staging;
++    struct wined3d_device_context *context;
++    struct d3d_texture2d *cursor, *copy;
++    struct wined3d_map_desc map;
++    LARGE_INTEGER start, end, freq;
++    struct wined3d_box box;
++    BOOL found = FALSE;
++
++    wined3d_mutex_lock();
++    /* The caller's pointer may be stale. */
++    LIST_FOR_EACH_ENTRY(cursor, &shared_textures, struct d3d_texture2d, shared_entry)
++    {
++        if (cursor == source)
++            found = TRUE;
++    }
++    if (!found || !source->shared_staging || list_empty(&source->shared_copies))
++    {
++        wined3d_mutex_unlock();
++        return;
++    }
++
++    if (source->shared_staging_valid
++            && wined3d_query_get_data(source->shared_query->wined3d_query, NULL, 0, 0) != S_OK)
++    {
++        wined3d_mutex_unlock();
++        return;
++    }
++
++    QueryPerformanceCounter(&start);
++    context = impl_from_ID3D11Device5(source->device)->immediate_context.wined3d_context;
++    src = wined3d_texture_get_resource(source->wined3d_texture);
++    staging = wined3d_texture_get_resource(source->shared_staging->wined3d_texture);
++
++    if (source->shared_staging_valid
++            && SUCCEEDED(wined3d_resource_map(staging, 0, &map, NULL, WINED3D_MAP_READ)))
++    {
++        wined3d_box_set(&box, 0, 0, source->desc.Width, source->desc.Height, 0, 1);
++        LIST_FOR_EACH_ENTRY(copy, &source->shared_copies, struct d3d_texture2d, shared_copy_entry)
++        {
++            wined3d_device_context_update_sub_resource(
++                    impl_from_ID3D11Device5(copy->device)->immediate_context.wined3d_context,
++                    wined3d_texture_get_resource(copy->wined3d_texture),
++                    0, &box, map.data, map.row_pitch, map.slice_pitch, 0);
++        }
++        wined3d_resource_unmap(staging, 0);
++    }
++
++    wined3d_device_context_copy_resource(context, staging, src);
++    wined3d_device_context_issue_query(context, source->shared_query->wined3d_query, WINED3DISSUE_END);
++    wined3d_device_context_flush(context);
++    source->shared_staging_valid = TRUE;
++    QueryPerformanceCounter(&end);
++    wined3d_mutex_unlock();
++
++    QueryPerformanceFrequency(&freq);
++    if ((end.QuadPart - start.QuadPart) * 1000 / freq.QuadPart >= 4)
++        WARN("Copying shared texture %p took %I64d ms.\n", source,
++                (end.QuadPart - start.QuadPart) * 1000 / freq.QuadPart);
++}
++
+ /* ID3D11Texture3D methods */
+ 
+ static inline struct d3d_texture3d *impl_from_ID3D11Texture3D(ID3D11Texture3D *iface)
+diff -u a/dlls/d3d11/view.c b/dlls/d3d11/view.c
+--- a/dlls/d3d11/view.c	2026-11-14 21:48:34.021115473 +0100
++++ b/dlls/d3d11/view.c	2026-11-14 22:24:42.726457653 +0100
+@@ -1709,6 +1709,7 @@
+ {
+     struct wined3d_resource *wined3d_resource;
+     struct wined3d_view_desc wined3d_desc;
++    D3D11_RESOURCE_DIMENSION dimension;
+     HRESULT hr;
+ 
+     view->ID3D11RenderTargetView_iface.lpVtbl = &d3d11_rendertarget_view_vtbl;
+@@ -1749,6 +1750,15 @@
+     view->resource = resource;
+     ID3D11Device5_AddRef(view->device = &device->ID3D11Device5_iface);
+ 
++    ID3D11Resource_GetType(resource, &dimension);
++    if (dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D)
++    {
++        struct d3d_texture2d *texture = unsafe_impl_from_ID3D11Texture2D((ID3D11Texture2D *)resource);
++
++        if ((texture->desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED) && !texture->shared_source)
++            view->shared_texture = texture;
++    }
++
+     return S_OK;
+ }
+ 

@@ -1,0 +1,30 @@
+--- a/dlls/dxgi/resource.c	2026-11-14 21:48:34.022768832 +0100
++++ b/dlls/dxgi/resource.c	2026-11-14 21:53:02.746853116 +0100
+@@ -385,9 +385,25 @@
+ /* IDXGIResource methods */
+ static HRESULT STDMETHODCALLTYPE dxgi_resource_GetSharedHandle(IDXGIResource1 *iface, HANDLE *shared_handle)
+ {
+-    FIXME("iface %p, shared_handle %p stub!\n", iface, shared_handle);
++    struct dxgi_resource *resource = impl_from_IDXGIResource1(iface);
++    struct wined3d_resource_desc desc;
+ 
+-    return E_NOTIMPL;
++    TRACE("iface %p, shared_handle %p.\n", iface, shared_handle);
++
++    wined3d_mutex_lock();
++    wined3d_resource_get_desc(resource->wined3d_resource, &desc);
++    wined3d_mutex_unlock();
++
++    if (!(desc.usage & WINED3DUSAGE_SHARED) || (desc.usage & WINED3DUSAGE_SHARED_NT_HANDLE))
++    {
++        FIXME("iface %p, shared_handle %p stub!\n", iface, shared_handle);
++        return E_NOTIMPL;
++    }
++
++    /* Not a kernel handle, and good inside this process only: d3d11 knows
++     * the texture by its wined3d resource and opens it by copying. */
++    *shared_handle = (HANDLE)resource->wined3d_resource;
++    return S_OK;
+ }
+ 
+ static HRESULT STDMETHODCALLTYPE dxgi_resource_GetUsage(IDXGIResource1 *iface, DXGI_USAGE *usage)

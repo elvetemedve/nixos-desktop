@@ -1,0 +1,59 @@
+--- a/dlls/winewayland.drv/opengl.c	2026-11-14 20:13:13.836283397 +0100
++++ b/dlls/winewayland.drv/opengl.c	2026-11-15 02:05:17.359198909 +0100
+@@ -28,6 +28,7 @@
+ #include <dlfcn.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <time.h>
+ 
+ #include "ntstatus.h"
+ #include "waylanddrv.h"
+@@ -104,20 +105,33 @@
+  */
+ static void wayland_drawable_wait_frame(struct wayland_gl_drawable *gl)
+ {
+-    struct timespec timeout = {.tv_nsec = FRAME_TIMEOUT_MS * 1000000};
++    struct timespec timeout = {.tv_nsec = FRAME_TIMEOUT_MS * 1000000}, start, now;
++    LONGLONG elapsed = 0;
++    BOOL nowait;
+ 
+     /* An application may go on drawing to a window it has hidden, for as
+      * long as it likes, and the thread that draws for it may hold locks
+      * that its other threads need: with wined3d, one thread draws every
+      * window of the process. So once the compositor has stopped asking,
+      * do not wait at all until it asks again, which is also what happens
+-     * to a hidden window with the X11 driver. */
+-    if (gl->stalled) timeout.tv_nsec = 0;
+-
++     * to a hidden window with the X11 driver. A window the application has
++     * hidden itself is known not to be asked for frames, so the first swap
++     * after that does not wait to find it out. */
++    nowait = gl->stalled || !NtUserIsWindowVisible(gl->base.client->hwnd);
++    if (nowait) timeout.tv_nsec = 0;
++
++    /* The time is counted here, over all the calls: one call comes back,
++     * with its own time not up, whenever anything at all arrives from the
++     * compositor, for whichever thread. */
++    clock_gettime(CLOCK_MONOTONIC, &start);
+     while (gl->frame_callback)
+     {
+-        if (wl_display_dispatch_queue_timeout(process_wayland.wl_display, gl->frame_queue, &timeout) <= 0)
++        if (wl_display_dispatch_queue_timeout(process_wayland.wl_display, gl->frame_queue, &timeout) < 0)
+             break;
++        clock_gettime(CLOCK_MONOTONIC, &now);
++        elapsed = (now.tv_sec - start.tv_sec) * 1000000000ll + now.tv_nsec - start.tv_nsec;
++        if (nowait || elapsed >= FRAME_TIMEOUT_MS * 1000000ll) break;
++        timeout.tv_nsec = FRAME_TIMEOUT_MS * 1000000ll - elapsed;
+     }
+ 
+     if (!gl->frame_callback)
+@@ -129,7 +143,8 @@
+ 
+     if (!gl->stalled)
+     {
+-        TRACE("drawable %s, no frame callback in %u ms\n", debugstr_opengl_drawable(&gl->base), FRAME_TIMEOUT_MS);
++        TRACE("drawable %s, no frame callback in %u ms\n", debugstr_opengl_drawable(&gl->base),
++              (unsigned int)(elapsed / 1000000));
+         gl->stalled = TRUE;
+         gl->stalled_swaps = 0;
+     }

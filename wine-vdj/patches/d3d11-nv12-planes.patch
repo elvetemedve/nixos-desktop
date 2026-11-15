@@ -1,0 +1,180 @@
+diff -u a/dlls/d3d11/d3d11_private.h b/dlls/d3d11/d3d11_private.h
+--- a/dlls/d3d11/d3d11_private.h	2026-11-15 01:26:30.729273371 +0100
++++ b/dlls/d3d11/d3d11_private.h	2026-11-15 01:27:02.038927391 +0100
+@@ -150,6 +150,10 @@
+      * holds a reference to it as its shared_source; shared_staging is the
+      * texture of the source's own device its content is read back through,
+      * and shared_query tells when the content has arrived there. */
++    /* An NV12 texture wined3d could not make is two textures: this is its
++     * chroma plane, and wined3d_texture its luma plane. */
++    struct wined3d_texture *nv12_chroma;
++
+     struct list shared_entry;
+     struct list shared_copies;
+     struct list shared_copy_entry;
+@@ -257,6 +261,9 @@
+ 
+     struct wined3d_private_store private_store;
+     struct wined3d_shader_resource_view *wined3d_view;
++    /* Held by a view of the chroma plane of an NV12 texture made of two:
++     * the d3d11 texture lives as long as its luma plane. */
++    struct wined3d_texture *nv12_luma;
+     D3D11_SHADER_RESOURCE_VIEW_DESC desc;
+     ID3D11Resource *resource;
+     ID3D11Device5 *device;
+diff -u a/dlls/d3d11/texture.c b/dlls/d3d11/texture.c
+--- a/dlls/d3d11/texture.c	2026-11-15 01:26:30.729076680 +0100
++++ b/dlls/d3d11/texture.c	2026-11-15 01:27:02.040606624 +0100
+@@ -560,6 +560,8 @@
+     {
+         ID3D11Device5_AddRef(texture->device);
+         wined3d_texture_incref(texture->wined3d_texture);
++        if (texture->nv12_chroma)
++            wined3d_texture_incref(texture->nv12_chroma);
+         if (texture->swapchain)
+             wined3d_swapchain_incref(texture->swapchain);
+     }
+@@ -577,6 +579,7 @@
+     if (!refcount)
+     {
+         ID3D11Device5 *device = texture->device;
++        struct wined3d_texture *chroma = texture->nv12_chroma;
+         struct d3d_texture2d *source, *staging;
+         struct d3d_query *query;
+ 
+@@ -597,6 +600,8 @@
+         /* Releasing the texture may free the d3d11 object, so do not access it
+          * after releasing the texture. */
+         wined3d_texture_decref(texture->wined3d_texture);
++        if (chroma)
++            wined3d_texture_decref(chroma);
+         if (query)
+             ID3D11Query_Release(&query->ID3D11Query_iface);
+         if (staging)
+@@ -988,6 +993,55 @@
+     return TRUE;
+ }
+ 
++/* wined3d's OpenGL renderer has no planar formats, and so no NV12 texture.
++ * One that is only read by shaders can be had as two textures, since the
++ * views a shader reads it through are of one plane each: R8 for luma, R8G8
++ * for chroma. Nothing else is done for it: mapping, updating or copying
++ * such a texture reaches its luma plane only. */
++static HRESULT d3d_texture2d_create_nv12(struct d3d_device *device, const struct wined3d_resource_desc *desc,
++        const D3D11_SUBRESOURCE_DATA *data, struct d3d_texture2d *texture)
++{
++    struct wined3d_sub_resource_data plane_data = {0};
++    struct wined3d_resource_desc plane_desc = *desc;
++    unsigned int pitch = 0;
++    HRESULT hr;
++
++    if ((desc->width & 1) || (desc->height & 1))
++        return WINED3DERR_INVALIDCALL;
++
++    if (data)
++    {
++        pitch = data->SysMemPitch ? data->SysMemPitch : desc->width;
++        plane_data.row_pitch = pitch;
++    }
++
++    /* The luma plane is made last: it owns the d3d11 texture, which would go
++     * with it were it the one to be let go of. */
++    plane_desc.format = WINED3DFMT_R8G8_UNORM;
++    plane_desc.width = desc->width / 2;
++    plane_desc.height = desc->height / 2;
++    plane_data.data = data ? (const BYTE *)data->pSysMem + pitch * desc->height : NULL;
++    if (FAILED(hr = wined3d_texture_create(device->wined3d_device, &plane_desc, 1, 1, 0,
++            data ? &plane_data : NULL, NULL, &d3d_null_wined3d_parent_ops, &texture->nv12_chroma)))
++        return hr;
++
++    plane_desc.format = WINED3DFMT_R8_UNORM;
++    plane_desc.width = desc->width;
++    plane_desc.height = desc->height;
++    plane_data.data = data ? data->pSysMem : NULL;
++    if (FAILED(hr = wined3d_texture_create(device->wined3d_device, &plane_desc, 1, 1, 0,
++            data ? &plane_data : NULL, texture, &d3d_texture2d_wined3d_parent_ops, &texture->wined3d_texture)))
++    {
++        wined3d_texture_decref(texture->nv12_chroma);
++        texture->nv12_chroma = NULL;
++        return hr;
++    }
++
++    WARN("Made %ux%u NV12 texture %p of two, usage %#x, bind flags %#x, access %#x, data %p.\n",
++            desc->width, desc->height, texture, desc->usage, desc->bind_flags, desc->access, data);
++    return hr;
++}
++
+ HRESULT d3d_texture2d_create(struct d3d_device *device, const D3D11_TEXTURE2D_DESC *desc,
+         struct wined3d_texture *wined3d_texture, const D3D11_SUBRESOURCE_DATA *data, struct d3d_texture2d **out)
+ {
+@@ -1057,6 +1111,10 @@
+             hr = wined3d_texture_create(device->wined3d_device, &wined3d_desc,
+                     desc->ArraySize, levels, flags, (struct wined3d_sub_resource_data *)data,
+                     texture, &d3d_texture2d_wined3d_parent_ops, &texture->wined3d_texture);
++            if (hr == WINED3DERR_INVALIDCALL && desc->Format == DXGI_FORMAT_NV12
++                    && levels == 1 && desc->ArraySize == 1 && desc->SampleDesc.Count <= 1
++                    && desc->BindFlags == D3D11_BIND_SHADER_RESOURCE)
++                hr = d3d_texture2d_create_nv12(device, &wined3d_desc, data, texture);
+         }
+         __EXCEPT_PAGE_FAULT
+         {
+diff -u a/dlls/d3d11/view.c b/dlls/d3d11/view.c
+--- a/dlls/d3d11/view.c	2026-11-15 01:26:30.730068778 +0100
++++ b/dlls/d3d11/view.c	2026-11-15 01:27:11.392645828 +0100
+@@ -2092,6 +2092,8 @@
+ {
+     struct d3d_shader_resource_view *view = parent;
+ 
++    if (view->nv12_luma)
++        wined3d_texture_decref(view->nv12_luma);
+     wined3d_private_store_cleanup(&view->private_store);
+     free(parent);
+ }
+@@ -2209,8 +2211,10 @@
+ static HRESULT d3d_shader_resource_view_init(struct d3d_shader_resource_view *view, struct d3d_device *device,
+         ID3D11Resource *resource, const D3D11_SHADER_RESOURCE_VIEW_DESC *desc)
+ {
++    struct wined3d_texture *nv12_luma = NULL;
+     struct wined3d_resource *wined3d_resource;
+     struct wined3d_view_desc wined3d_desc;
++    D3D11_RESOURCE_DIMENSION dimension;
+     HRESULT hr;
+ 
+     view->ID3D11ShaderResourceView_iface.lpVtbl = &d3d11_shader_resource_view_vtbl;
+@@ -2240,6 +2244,27 @@
+         return E_FAIL;
+     }
+ 
++    ID3D11Resource_GetType(resource, &dimension);
++    if (dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D)
++    {
++        struct d3d_texture2d *texture = unsafe_impl_from_ID3D11Texture2D((ID3D11Texture2D *)resource);
++
++        if (texture->nv12_chroma)
++        {
++            if (view->desc.Format == DXGI_FORMAT_R8G8_UNORM)
++            {
++                wined3d_resource = wined3d_texture_get_resource(texture->nv12_chroma);
++                nv12_luma = texture->wined3d_texture;
++            }
++            else if (view->desc.Format != DXGI_FORMAT_R8_UNORM)
++            {
++                wined3d_mutex_unlock();
++                WARN("Invalid view format %#x for an NV12 texture.\n", view->desc.Format);
++                return E_INVALIDARG;
++            }
++        }
++    }
++
+     if (FAILED(hr = wined3d_shader_resource_view_create(&wined3d_desc, wined3d_resource,
+             view, &d3d_shader_resource_view_wined3d_parent_ops, &view->wined3d_view)))
+     {
+@@ -2247,6 +2272,8 @@
+         WARN("Failed to create wined3d shader resource view, hr %#lx.\n", hr);
+         return hr;
+     }
++    if ((view->nv12_luma = nv12_luma))
++        wined3d_texture_incref(nv12_luma);
+ 
+     wined3d_private_store_init(&view->private_store);
+     wined3d_mutex_unlock();

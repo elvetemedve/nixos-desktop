@@ -131,6 +131,13 @@ tested, what is still open and what Wayland rules out is in
   one wined3d thread draws every window of the process, one hidden window
   that keeps drawing stops all of them.
 
+- `winewayland-frame-wait-deadline.patch` — `opengl.c`. Two corrections to
+  the wait above. The 100 ms are counted over the whole wait: one call into
+  libwayland comes back whenever anything arrives from the compositor, for
+  any thread, and the wait began anew each time, 961 ms in one trace. And a
+  window the application has hidden does not wait even once. Before this,
+  closing the Visuals picker stopped the skin for about a second.
+
 - `winewayland-subsurface-pointer.patch` — `wayland_surface.c`, `window.c`,
   `wayland_pointer.c`, `waylanddrv.h`. Sends a subsurface's new position as
   soon as the window moves, not with its next drawn frame, and maps pointer
@@ -243,6 +250,35 @@ tested, what is still open and what Wayland rules out is in
   the TV) is open and the frame limiter works. The half-made texture is
   leaked. Other calls that copy application memory under that lock are not
   guarded.
+
+- `dxgi-shared-handle.patch` — `dlls/dxgi/resource.c` — and
+  `d3d11-shared-texture.patch` — `dlls/d3d11/texture.c`, `device.c`,
+  `view.c`, `d3d11_private.h`. `IDXGIResource::GetSharedHandle` and
+  `ID3D11Device::OpenSharedResource`, both stubs in Wine 11.21, for two
+  devices of one process. VirtualDJ draws video on a device of its own and
+  shares a texture with the skin's device to show it in the MASTER VIDEO
+  box, which stayed empty. Wine cannot share a texture between devices, so
+  the opening device gets a texture of its own, and the content is copied
+  across each time the application takes the shared texture off as render
+  target. The copy goes through system memory, is a frame or more late, and
+  is skipped while the drawing thread has not yet reached the previous one
+  (an event query tells): reading back any sooner waits for that thread
+  with the global wined3d lock held, which stalled the skin for 20 to 50 ms
+  at a time. The handle is the address of a wined3d object, no kernel
+  handle, and means nothing to another process. One mip level, one layer,
+  no multisampling; keyed mutexes and NT handles are not covered. Applies
+  under X11 and Wayland alike.
+
+- `d3d11-nv12-planes.patch` — `dlls/d3d11/texture.c`, `view.c`,
+  `d3d11_private.h`. An NV12 texture that is only read by shaders, which
+  wined3d's OpenGL renderer refuses to make (it has no planar formats; the
+  Vulkan renderer has), is made of two textures, R8 for luma and R8G8 for
+  chroma, and a shader resource view gets the one its format names.
+  VirtualDJ's Visuals picker makes its thumbnails this way; with the
+  refusal they showed as noise, and the fault guarded against above came
+  from the same place. Mapping, updating or copying such a texture reaches
+  its luma plane only, and one with any bind flag but shader resource is
+  still refused. Applies under X11 and Wayland alike.
 
 Delete a patch from `flake.nix`'s `patches` list once its fix lands in
 upstream Wine and the pinned `wine-src` moves past it.

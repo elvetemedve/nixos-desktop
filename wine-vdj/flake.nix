@@ -16,14 +16,16 @@
     kernel32's IsEnclaveTypeSupported, answering "not supported", which
     VirtualDJ 8.5.9729+ calls on every start and which otherwise crashes it
     on Wine's missing-import stub.
-    Sixteen more patches, for the Wayland driver (touchpad scrolling and
+    Seventeen more patches, for the Wayland driver (touchpad scrolling and
     pinch, windows the application drags by itself, size rounding at
     fractional scales, popup placement, swaps on hidden windows,
     owned-window positions and stacking, and monitor names), are built into
-    winewayland.so alone, one,
+    winewayland.so alone, one
     implementing IDXGIOutput::WaitForVBlank so VirtualDJ's frame limiter
-    works, into dxgi.dll alone, one, which keeps a fault VirtualDJ
-    catches from leaving the wined3d lock held, into d3d11.dll alone, and
+    works, and one of the two that let two Direct3D devices share a texture,
+    into dxgi.dll alone, three (the other of those two, one which keeps a
+    fault VirtualDJ catches from leaving the wined3d lock held, and one for
+    NV12 textures on the OpenGL renderer) into d3d11.dll alone, and
     one, which reports a monitor's own name, into win32u.so alone. All
     four are swapped into the full build, so
     they do not need a full Wine rebuild of their own.
@@ -110,6 +112,7 @@
         ./patches/winewayland-scale-lock-order.patch
         ./patches/winewayland-fullscreen-retarget.patch
         ./patches/winewayland-monitor-edid.patch
+      ./patches/winewayland-frame-wait-deadline.patch
       ];
 
       # winewayland.so alone, from wine-base's own source, patches,
@@ -149,6 +152,7 @@
       # DLL, and the import libraries it links against on the way.
       dxgiPatches = [
         ./patches/dxgi-output-waitforvblank.patch
+      ./patches/dxgi-shared-handle.patch
       ];
 
       dxgi = wine-base.overrideAttrs (old: {
@@ -174,6 +178,8 @@
       # And for d3d11.dll.
       d3d11Patches = [
         ./patches/d3d11-texture2d-initial-data-fault.patch
+      ./patches/d3d11-shared-texture.patch
+      ./patches/d3d11-nv12-planes.patch
       ];
 
       d3d11 = wine-base.overrideAttrs (old: {
