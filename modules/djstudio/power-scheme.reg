@@ -1,0 +1,10 @@
+Windows Registry Editor Version 5.00
+
+; DJ.Studio asks every 5 seconds (`reg query` on this key) whether Windows
+; is saving power, and prints a warning with a stack trace each time the
+; query fails -- which, as Wine has no power plans, it always did. It only
+; looks for the Power saver plan (a1841308-...) or the Best power
+; efficiency overlay (961cc777-...); anything else reads as "not saving
+; power", so this is Balanced, the Windows default.
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes]
+"ActivePowerScheme"="381b4222-f694-41f0-9685-f624d9d5f3d4"

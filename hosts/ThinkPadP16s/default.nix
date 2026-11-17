@@ -25,6 +25,7 @@
     ../../modules/external-ssd.nix
     ../../modules/qlcplus
     ../../modules/virtualdj
+    ../../modules/djstudio
 
     ./hardware-configuration.nix
   ];
