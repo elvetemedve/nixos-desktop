@@ -74,8 +74,10 @@ Export. Each cleaned phrase becomes a numbered, coloured remix point named
 after its label and its length in bars, "Chorus (16)" -- VirtualDJ has
 no field for a marker's length, but shows its name and lets a script
 read it -- in the colour DJ.Studio shows it in. (On a double-time grid,
-High Hopes say, the bars are DJ.Studio's: twice the felt ones.) Every
-remix point the song had before,
+High Hopes say, the bars are DJ.Studio's: twice the felt ones.) They are
+numbered from 33 up: a numbered remix point is a hot cue as well, and
+the HOTCUES pads would otherwise show the first 8 phrases in place of
+the DJ's own cues. Every remix point the song had before,
 VirtualDJ's own "Break 1"/"End Break 1" markers included, is replaced, so
 the export can be re-run. Songs are matched on their Windows path, which
 DJ.Studio copies verbatim for tracks imported from VirtualDJ (and both
@@ -121,6 +123,10 @@ KICK_SHARE = 0.2     # a track with a kick in fewer blocks has no steady one
 SHIFT_GAIN = 0.1     # a beat-off downbeat must win by this much on average
 SAME_DB = 1.9        # blocks closer than this in fine bands: the same music
 LENGTH_NOTE = "not a multiple of 8 bars"
+# The phrases are numbered from here, as VirtualDJ cues: numbered remix
+# points also act as hot cues, and the HOTCUES pads show cues 1-8, so 1-32
+# stay free for the DJ's own hot cues and saved loops.
+FIRST_NUM = 33
 
 SONG_RE = re.compile(r'<Song FilePath="([^"]*)"[^>]*>.*?</Song>', re.S)
 
@@ -696,7 +702,7 @@ def show(opts):
 
 def remix_pois(phrases):
     pois = []
-    for num, p in enumerate(phrases, 1):
+    for num, p in enumerate(phrases, FIRST_NUM):
         try:
             rgb = int((p["color"] or "").lstrip("#"), 16) & 0xFFFFFF
         except ValueError:
