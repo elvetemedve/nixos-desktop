@@ -71,8 +71,11 @@ thresholds were set on three tracks checked by ear and tried on sixteen
 more. --no-kick leaves the whole check out.
 
 Export. Each cleaned phrase becomes a numbered, coloured remix point named
-after its label -- the shape VirtualDJ's POI editor gives one -- in the
-colour DJ.Studio shows it in. Every remix point the song had before,
+after its label and its length in bars, "Chorus (16)" -- VirtualDJ has
+no field for a marker's length, but shows its name and lets a script
+read it -- in the colour DJ.Studio shows it in. (On a double-time grid,
+High Hopes say, the bars are DJ.Studio's: twice the felt ones.) Every
+remix point the song had before,
 VirtualDJ's own "Break 1"/"End Break 1" markers included, is replaced, so
 the export can be re-run. Songs are matched on their Windows path, which
 DJ.Studio copies verbatim for tracks imported from VirtualDJ (and both
@@ -698,7 +701,9 @@ def remix_pois(phrases):
             rgb = int((p["color"] or "").lstrip("#"), 16) & 0xFFFFFF
         except ValueError:
             rgb = 0xFFFFFF
-        name = html.escape(p["label"].title())
+        # The length is in the name: VirtualDJ shows a remix point's name
+        # (and lets a script read it) but has no field for its length.
+        name = html.escape(f'{p["label"].title()} ({round(p["bars"])})')
         pos = max(p["startTime"], 0.0)
         pois.append(f'<Poi Name="{name}" Pos="{pos:.6f}" Num="{num}" '
                     f'Color="{0xFF000000 | rgb}" Type="remix" />')
