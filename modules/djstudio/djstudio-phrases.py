@@ -125,7 +125,8 @@ SAME_DB = 1.9        # blocks closer than this in fine bands: the same music
 LENGTH_NOTE = "not a multiple of 8 bars"
 # The phrases are numbered from here, as VirtualDJ cues: numbered remix
 # points also act as hot cues, and the HOTCUES pads show cues 1-8, so 1-32
-# stay free for the DJ's own hot cues and saved loops.
+# stay free for the DJ's own hot cues and saved loops. The "phrases" pad
+# page in ../virtualdj/default.nix (firstCue) must agree.
 FIRST_NUM = 33
 
 SONG_RE = re.compile(r'<Song FilePath="([^"]*)"[^>]*>.*?</Song>', re.S)

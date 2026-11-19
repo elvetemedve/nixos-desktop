@@ -4,10 +4,79 @@
 # needs around that -- the PipeASIO driver registration,
 # the DDJ-FLX10 driver-name alias, the display DPI -- is applied on each
 # start, so the prefix can be rebuilt from scratch without manual setup.
-{ pkgs, inputs, username, ... }:
+{ pkgs, lib, inputs, username, ... }:
 let
   wineVdj = inputs.wine-vdj.packages.${pkgs.stdenv.hostPlatform.system}.default;
   prefix = "/home/${username}/virtualdj";
+
+  # A pad page, "phrases", for the phrase markers djstudio-phrases exports
+  # (modules/djstudio): 8 pads, each showing a phrase's name ("Chorus
+  # (16)") in its colour and jumping to it, and arrows that turn the page.
+  # Neither built-in page can do it: HOTCUES shows cues 1-8 only -- its
+  # arrows pick a single cue, not a page -- and Remix Points has no pages.
+  #
+  # The phrases are cues from 33 up, so 1-32 stay free for the DJ's own hot
+  # cues and saved loops; firstCue must match FIRST_NUM in
+  # djstudio-phrases.py.
+  #
+  # VDJScript has no arithmetic that cue_name and cue_color accept -- they
+  # want a literal cue number, and showed the chained number itself when
+  # handed one -- so every pad spells out its cue for each page, picked by
+  # the deck variable phrase_page. goto_cue rather than hot_cue, which
+  # would create a cue on an empty slot.
+  phrasesPadPage =
+    let
+      pads = 8;
+      pages = 4;      # 32 phrases; the most any track has had is 17
+      firstCue = 33;
+
+      # The cue under pad `pad` of page `page`, both counted from 0.
+      cue = page: pad: toString (firstCue + page * pads + pad);
+
+      # One expression per page. Pages 2-4 are matched by value and
+      # anything else is page 1, so a deck that never turned a page -- the
+      # variable not set yet -- shows page 1: get_var on an unset variable
+      # reads -0.12, so nothing here computes with it.
+      perPage = expr: lib.foldl'
+        (rest: page: "var 'phrase_page' ${toString page} ? (${expr page}) : (${rest})")
+        (expr 0)
+        (lib.reverseList (lib.range 1 (pages - 1)));
+
+      pad = n:
+        let
+          ifCue = page: yes: no:
+            "has_cue ${cue page n} ? ${yes} ${cue page n} : ${no}";
+          name = "`" + perPage (page: ifCue page "cue_name" "get_text ''") + "`";
+          color = perPage (page: ifCue page "cue_color" "color 'black'");
+          action = perPage (page: ifCue page "goto_cue" "nothing");
+        in
+        ''	<pad${toString (n + 1)} name="${lib.escapeXML name}" color="${lib.escapeXML color}">${lib.escapeXML action}</pad${toString (n + 1)}>'';
+
+      # "Page 2/3": this page, and the last page that has a phrase on it.
+      label =
+        "Page `" + perPage (page: "get_text '${toString (page + 1)}'") + "`/`"
+        + lib.foldl'
+          (rest: page: "has_cue ${cue page 0} ? get_text '${toString (page + 1)}' : (${rest})")
+          "get_text '1'"
+          (lib.range 1 (pages - 1))
+        + "`";
+
+      # The arrows: up only onto a page that has a phrase, down not below 1.
+      up = perPage (page:
+        if page < pages - 1
+        then "has_cue ${cue (page + 1) 0} ? set 'phrase_page' ${toString (page + 1)} : nothing"
+        else "nothing");
+      down = perPage (page: "set 'phrase_page' ${toString (lib.max (page - 1) 0)}");
+    in
+    pkgs.writeText "phrases.xml" (lib.concatStringsSep "\n" ([
+      ''<?xml version="1.0" encoding="UTF-8"?>''
+      "<!-- Written by the NixOS virtualdj module on every start; edits here are overwritten. -->"
+      ''<page name="phrases">''
+    ] ++ map pad (lib.range 0 (pads - 1)) ++ [
+      ''	<param1 name="${lib.escapeXML label}">${lib.escapeXML "param_bigger 0 ? (${up}) : (${down})"}</param1>''
+      "</page>"
+      ""
+    ]));
 
   # Microsoft's real HLSL compiler, to replace Wine's builtin d3dcompiler_47.
   #
@@ -228,6 +297,20 @@ Start VirtualDJ anyway?"; then
       # the exec below: it only works because it lands before virtualdj.exe
       # reads the key.
       "${wineVdj}/bin/wine" regedit /S ${./homefolder.reg}
+
+      # The phrases pad page (phrasesPadPage above). Pad pages live in the
+      # data directory -- the SSD's D:\VirtualDJ, or the C: fallback when it
+      # is missing -- so every one that exists gets it. A copy rather than a
+      # link to the store, so VirtualDJ can treat it like its other pages.
+      # Not fatal: a missing pad page is no reason to keep VirtualDJ from
+      # starting, and the SSD's filesystem may refuse what C: allows.
+      for home in "$homeFolder" "${prefix}/drive_c/users/${username}/AppData/Local/VirtualDJ"; do
+        if [ -d "$home" ]; then
+          { mkdir -p "$home/Pads" &&
+            cp -f --no-preserve=mode ${phrasesPadPage} "$home/Pads/phrases.xml"; } ||
+            echo "virtualdj: could not install the phrases pad page into $home/Pads" >&2
+        fi
+      done
 
       # Makes DXGI report a card VirtualDJ will enable GPU stems on; see the
       # comments in the .reg itself.
