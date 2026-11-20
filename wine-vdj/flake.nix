@@ -26,8 +26,10 @@
     into dxgi.dll alone, three (the other of those two, one which keeps a
     fault VirtualDJ catches from leaving the wined3d lock held, and one for
     NV12 textures on the OpenGL renderer) into d3d11.dll alone, and
-    one, which reports a monitor's own name, into win32u.so alone. All
-    four are swapped into the full build, so
+    one, which reports a monitor's own name, into win32u.so alone, and one
+    which keeps a window drawn by another process on its offscreen path
+    (DJ.Studio's main screen went black after the screen was off) into
+    winex11.so alone. All five are swapped into the full build, so
     they do not need a full Wine rebuild of their own.
     PipeASIO (https://github.com/M0n7y5/pipeasio) provides a low-latency
     ASIO-to-PipeWire audio driver, built here against this same Wine so its
@@ -229,8 +231,38 @@
         postInstall = "";
       });
 
-      # wine-base with winewayland.so, dxgi.dll, d3d11.dll and win32u.so
-      # replaced by the ones built above.
+      # And for winex11.so, the X11 driver's unix half, the same way as
+      # winewayland.so above.
+      winex11Patches = [
+        ./patches/winex11-foreign-window-offscreen.patch
+      ];
+
+      winex11 = wine-base.overrideAttrs (old: {
+        name = "winex11-${wineVersion}";
+        patches = old.patches ++ winex11Patches;
+
+        buildPhase = ''
+          runHook preBuild
+          cp ${wine-base}/lib/wine/x86_64-unix/ntdll.so dlls/ntdll/ntdll.so
+          cp ${wine-base}/lib/wine/x86_64-unix/win32u.so dlls/win32u/win32u.so
+          make -j$NIX_BUILD_CORES \
+            -o dlls/ntdll/ntdll.so -o dlls/win32u/win32u.so \
+            dlls/winex11.drv/winex11.so
+          runHook postBuild
+        '';
+
+        installPhase = ''
+          runHook preInstall
+          install -Dm755 dlls/winex11.drv/winex11.so \
+            $out/lib/wine/x86_64-unix/winex11.so
+          runHook postInstall
+        '';
+
+        postInstall = "";
+      });
+
+      # wine-base with winewayland.so, winex11.so, dxgi.dll, d3d11.dll and
+      # win32u.so replaced by the ones built above.
       #
       # A symlink tree rather than a copy, except where Wine works out its
       # own location: the loader from /proc/self/exe and ntdll.so from the
@@ -281,6 +313,10 @@
         cp ${winewayland}/lib/wine/x86_64-unix/winewayland.so \
           "$out/lib/wine/x86_64-unix/winewayland.so"
 
+        rm "$out/lib/wine/x86_64-unix/winex11.so"
+        cp ${winex11}/lib/wine/x86_64-unix/winex11.so \
+          "$out/lib/wine/x86_64-unix/winex11.so"
+
         rm "$out/lib/wine/x86_64-windows/dxgi.dll"
         cp ${dxgi}/lib/wine/x86_64-windows/dxgi.dll \
           "$out/lib/wine/x86_64-windows/dxgi.dll"
@@ -322,7 +358,7 @@
     in
     {
       packages.${system} = {
-        inherit wine-base winewayland dxgi d3d11 win32u wine-base-patched pipeasio;
+        inherit wine-base winewayland winex11 dxgi d3d11 win32u wine-base-patched pipeasio;
 
         # Patched Wine (wine-base-patched, which is wine-base with its
         # rebuilt winewayland.so) with PipeASIO merged into its own lib/wine

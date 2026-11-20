@@ -1,0 +1,18 @@
+--- a/dlls/winex11.drv/init.c
++++ b/dlls/winex11.drv/init.c
+@@ -222,6 +222,15 @@
+ 
+ static BOOL needs_offscreen_rendering( HWND hwnd, BOOL raw )
+ {
++    struct x11drv_win_data *data;
++
++    /* A window of another process (a GPU process drawing into the window of
++     * its browser process) has no X11 data in this one: its client window
++     * cannot be attached to the window's X window from here, and is only
++     * shown by being copied into it. */
++    if (!(data = get_win_data( hwnd ))) return TRUE;
++    release_win_data( data );
++
+     if (!raw && NtUserGetDpiForWindow( hwnd ) != NtUserGetWinMonitorDpi( hwnd, MDT_RAW_DPI )) return TRUE; /* needs DPI scaling */
+     if (NtUserGetAncestor( hwnd, GA_PARENT ) != NtUserGetDesktopWindow()) return TRUE; /* child window, needs compositing */
+     if (NtUserGetWindowRelative( hwnd, GW_CHILD )) return needs_client_window_clipping( hwnd ); /* window has children, needs compositing */

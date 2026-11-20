@@ -89,7 +89,7 @@ Seven local patches plus one carried from wine-staging. All apply cleanly with
 ## Built per module
 
 These are not in the `patches` list. Each set is built into its one module
-(`winewayland.so`, `dxgi.dll`, `d3d11.dll`), which is then swapped into the full build, so
+(`winewayland.so`, `winex11.so`, `dxgi.dll`, `d3d11.dll`, `win32u.so`), which is then swapped into the full build, so
 changing one does not rebuild all of Wine.
 
 The `virtualdj` command runs on the Wayland driver, and these patches are
@@ -232,6 +232,23 @@ tested, what is still open and what Wayland rules out is in
   window and Visualization Settings open the GUI stalled for 100 ms at a
   time. Applies under X11 and Wayland alike. The vertical blank is
   approximated from the clock, not taken from the display.
+
+- `winex11-foreign-window-offscreen.patch` — `dlls/winex11.drv/init.c`.
+  A GL or Vulkan surface on a window that another process owns is always
+  drawn offscreen and copied into that window's X window. Chromium (and so
+  every Electron app, DJ.Studio included) draws from its GPU process into
+  the browser process's window. The X11 driver attaches a client window
+  only to an X window of its own process; for anyone else's window the
+  attach does nothing, and the drawing lands in a window nobody shows.
+  Stock Wine still picks that path when it thinks no clipping is needed,
+  and its check compares the visible region, in screen coordinates, with
+  the client rect from (0,0): they match only when the client area starts
+  at the screen's top-left corner. DJ.Studio's maximized main window gets
+  there after being minimized and restored, which KDE Plasma does by
+  itself when the screen turns off (it marks X11 windows hidden and Wine
+  minimizes them). From then on the main screen stayed black. Affects the
+  X11 driver only, so DJ.Studio, not the `virtualdj` command. Not filed
+  upstream yet.
 
 - `win32u-monitor-device-string.patch` — `dlls/win32u/sysparams.c`.
   `EnumDisplayDevices` gives a monitor's EDID display name as its
